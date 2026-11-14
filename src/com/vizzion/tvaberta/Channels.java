@@ -73,7 +73,11 @@ final class Channels {
         if (category == FAVORITES) return favorites(c);
         List<Channel> main = loadList(c, BASE + CATEGORY_PATHS[category] + ".m3u",
                 "cat_" + CATEGORY_PATHS[category].replace('/', '_') + ".m3u");
-        for (java.util.Iterator<Channel> it = main.iterator(); it.hasNext(); ) if (unofficial(it.next())) it.remove();
+        // Only the famous channels, and never the unofficial pay-TV re-streams.
+        for (java.util.Iterator<Channel> it = main.iterator(); it.hasNext(); ) {
+            Channel ch = it.next();
+            if (unofficial(ch) || !famous(ch)) it.remove();
+        }
         if (category != 1) { rank(main); return main; }
         // Brasil also gets the regional and community channels of iptv-com's list, without repeats.
         // Pay-TV brands there come from unofficial re-streams, so they are left out.
@@ -81,7 +85,7 @@ final class Channels {
             java.util.Set<String> seen = new java.util.HashSet<>();
             for (Channel ch : main) { seen.add(ch.url); seen.add(fold(ch.name)); }
             for (Channel ch : loadList(c, EXTRA_BRASIL, "extra_brazil.m3u")) {
-                if (unofficial(ch) || seen.contains(ch.url) || seen.contains(fold(ch.name))) continue;
+                if (unofficial(ch) || !famous(ch) || seen.contains(ch.url) || seen.contains(fold(ch.name))) continue;
                 main.add(ch);
             }
         } catch (Exception ignored) {} // the extra list is a bonus: Brasil still works without it
@@ -89,28 +93,42 @@ final class Channels {
         return main;
     }
 
-    // Most famous first. The lists carry no audience numbers, so this is a hand-made ranking of the
-    // best-known channels, in tiers; everything else follows, best picture first, part-time last.
+    // Only the big names, most famous first (the lists carry no audience numbers, so this is chosen by
+    // hand, at the level of the national networks). Matched on the accent-free, lower-case name.
+    // Globo, ESPN, SporTV and other pay channels are not here: these lists only carry them as
+    // unofficial re-streams (see PAY_TV); Globo is on the antenna and in Globoplay.
     private static final String[] FAME = {
         // Brazil's national free-to-air networks
-        "^sbt nacional", "^record( \\(|$)", "^band( \\(|$)", "^rede ?tv!? ?sd", "^rede ?tv", "^tv cultura", "^tv brasil( \\(|$)",
-        // news
-        "^cnn brasil", "^jovem pan", "^bandnews", "^record news", "^sbt news", "^times brasil", "^canal uol", "^pluto tv record news",
-        "^pluto tv canal uol", "^bm&c",
-        // public and institutional
-        "^tv camara \\(", "^tv senado", "^tv justica", "^canal futura", "^futura", "^rede minas", "^tve ", "^cultura",
-        // big religious networks
-        "^tv aparecida", "^tv cancao nova", "^rede vida", "^novo tempo", "^rit tv", "^rede gospel", "^tv pai eterno", "^tv evangelizar",
-        // agro and big regional networks
-        "^canal rural", "^terra viva", "^amazon sat", "^tv gazeta", "^rede brasil", "^rede cnt", "^rede meio norte", "^tv bahia",
-        "^sbt ", "^recordtv", "^redetv", "^mtv",
-        // well-known international channels (news, sport, culture)
-        "^bbc", "^cnn( |$)", "^dw( |$)", "^france 24", "^al jazeera", "^euronews", "^bloomberg", "^sky news", "^abc news", "^cbs news",
-        "^nbc news", "^red bull", "^nasa", "^fifa", "^nhk", "^tve internacional", "^rt( |$)", "^trt world", "^cgtn", "^arirang"
+        "^sbt nacional", "^record( \\(|$)", "^band( \\(|$)", "^rede ?tv!? ?(sd|mais)", "^tv cultura( \\(|$)",
+        "^tv brasil( \\(|$)", "^tv gazeta( \\(|$)",
+        // big news channels
+        "^cnn brasil", "^jovem pan news", "^bandnews", "^record news", "^sbt news", "^pluto tv record news",
+        // sport, free and official
+        "^caze", "^fifa\\+( \\(|$| portuguese)", "^red bull tv( \\(|$| br)", "^pluto tv esportes", "^ufc", "^wwe", "^nba( |$)",
+        // kids
+        "^nickelodeon (classico|teen|toons|\\(brazil)", "^nick jr\\. club.*\\bbr\\b", "^bob esponja", "^turma da monica",
+        "^pluto tv kids( \\(|$)", "^pluto tv junior",
+        // films and entertainment from Pluto TV Brasil
+        "^pluto tv (cine|filmes)", "^mtv pluto tv br",
+        // the big international news channels, main feeds in English or Portuguese
+        "^bbc news( \\(|$| uk)", "^cnn international( \\(|$)", "^cnn portugal", "^dw english", "^france 24 english( \\(|$)",
+        "^al jazeera english( \\(|$)"
     };
     private static final java.util.regex.Pattern[] FAME_P = new java.util.regex.Pattern[FAME.length];
     static {
         for (int i = 0; i < FAME.length; i++) FAME_P[i] = java.util.regex.Pattern.compile(FAME[i]);
+    }
+
+    // Feeds of those brands made for other countries (Spanish, German, Danish... versions of Pluto TV
+    // and Nickelodeon), which a Brazilian viewer doesn't want.
+    private static final java.util.regex.Pattern FOREIGN = java.util.regex.Pattern.compile(
+            "\\b(latam|germany|dk|no|italy|spain|mexico|france)\\b|pantalones|juniorklubben|accion|clasico|crimen|de autor|"
+            + "estelar|inspirador|romantico|suspenso|italiano|orientale");
+
+    static boolean famous(Channel c) {
+        if (fame(c) >= FAME_P.length || FOREIGN.matcher(c.search).find()) return false;
+        // "(United States)" feeds only count in their Brazilian version (marked BR).
+        return !c.search.contains("united states") || c.search.matches(".*\\bbr\\b.*");
     }
 
     private static int fame(Channel c) {

@@ -21,14 +21,41 @@ import java.util.Map;
 // Downloads the iptv-org lists, keeps them cached for 12 hours, and parses them.
 final class Channels {
 
-    static final String[] CATEGORY_NAMES = {"Brasil", "Notícias", "Esportes", "Filmes", "Entretenimento", "Infantil", "Todos"};
+    // Category 0 is the viewer's favourites, kept on the TV; the rest are iptv-org lists.
+    static final int FAVORITES = 0;
+    static final String[] CATEGORY_NAMES = {"★ Favoritos", "Brasil", "Notícias", "Esportes", "Filmes", "Entretenimento", "Infantil", "Todos"};
     private static final String BASE = "https://iptv-org.github.io/iptv/";
-    private static final String[] CATEGORY_PATHS = {"countries/br", "categories/news", "categories/sports",
+    private static final String[] CATEGORY_PATHS = {null, "countries/br", "categories/news", "categories/sports",
             "categories/movies", "categories/entertainment", "categories/kids", "index"};
     private static final long CACHE_MS = 12L * 60 * 60 * 1000;
 
     static final class Channel {
-        String name, url, group, referrer, userAgent, search;
+        String name, url, group, referrer, userAgent, search, logo, id;
+        boolean partTime; // marked [Not 24/7] in the list (the tag itself is taken out of the name)
+
+        // One line per channel for storage: fields split by tabs (tabs and line breaks removed first).
+        String encode() {
+            StringBuilder b = new StringBuilder();
+            for (String s : new String[] {name, url, group, referrer, userAgent, logo}) {
+                if (b.length() > 0) b.append('\t');
+                b.append(s == null ? "" : s.replace('\t', ' ').replace('\n', ' '));
+            }
+            return b.toString();
+        }
+
+        static Channel decode(String line) {
+            String[] f = line.split("\t", -1);
+            if (f.length < 2 || f[1].isEmpty()) return null;
+            Channel c = new Channel();
+            c.name = f[0];
+            c.url = f[1];
+            c.group = f.length > 2 && !f[2].isEmpty() ? f[2] : null;
+            c.referrer = f.length > 3 && !f[3].isEmpty() ? f[3] : null;
+            c.userAgent = f.length > 4 && !f[4].isEmpty() ? f[4] : null;
+            c.logo = f.length > 5 && !f[5].isEmpty() ? f[5] : null;
+            c.search = fold(c.name);
+            return c;
+        }
 
         Map<String, String> headers() {
             Map<String, String> h = new HashMap<>();
@@ -43,17 +70,181 @@ final class Channels {
 
     // Loads a category: fresh cache, else download, else a stale cache. Throws if there is nothing at all.
     static List<Channel> load(Context c, int category) throws Exception {
-        File f = new File(c.getFilesDir(), "cat_" + category + ".m3u");
+        if (category == FAVORITES) return favorites(c);
+        List<Channel> main = loadList(c, BASE + CATEGORY_PATHS[category] + ".m3u",
+                "cat_" + CATEGORY_PATHS[category].replace('/', '_') + ".m3u");
+        for (java.util.Iterator<Channel> it = main.iterator(); it.hasNext(); ) if (unofficial(it.next())) it.remove();
+        if (category != 1) { rank(main); return main; }
+        // Brasil also gets the regional and community channels of iptv-com's list, without repeats.
+        // Pay-TV brands there come from unofficial re-streams, so they are left out.
+        try {
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (Channel ch : main) { seen.add(ch.url); seen.add(fold(ch.name)); }
+            for (Channel ch : loadList(c, EXTRA_BRASIL, "extra_brazil.m3u")) {
+                if (unofficial(ch) || seen.contains(ch.url) || seen.contains(fold(ch.name))) continue;
+                main.add(ch);
+            }
+        } catch (Exception ignored) {} // the extra list is a bonus: Brasil still works without it
+        rank(main);
+        return main;
+    }
+
+    // Most famous first. The lists carry no audience numbers, so this is a hand-made ranking of the
+    // best-known channels, in tiers; everything else follows, best picture first, part-time last.
+    private static final String[] FAME = {
+        // Brazil's national free-to-air networks
+        "^sbt nacional", "^record( \\(|$)", "^band( \\(|$)", "^rede ?tv!? ?sd", "^rede ?tv", "^tv cultura", "^tv brasil( \\(|$)",
+        // news
+        "^cnn brasil", "^jovem pan", "^bandnews", "^record news", "^sbt news", "^times brasil", "^canal uol", "^pluto tv record news",
+        "^pluto tv canal uol", "^bm&c",
+        // public and institutional
+        "^tv camara \\(", "^tv senado", "^tv justica", "^canal futura", "^futura", "^rede minas", "^tve ", "^cultura",
+        // big religious networks
+        "^tv aparecida", "^tv cancao nova", "^rede vida", "^novo tempo", "^rit tv", "^rede gospel", "^tv pai eterno", "^tv evangelizar",
+        // agro and big regional networks
+        "^canal rural", "^terra viva", "^amazon sat", "^tv gazeta", "^rede brasil", "^rede cnt", "^rede meio norte", "^tv bahia",
+        "^sbt ", "^recordtv", "^redetv", "^mtv",
+        // well-known international channels (news, sport, culture)
+        "^bbc", "^cnn( |$)", "^dw( |$)", "^france 24", "^al jazeera", "^euronews", "^bloomberg", "^sky news", "^abc news", "^cbs news",
+        "^nbc news", "^red bull", "^nasa", "^fifa", "^nhk", "^tve internacional", "^rt( |$)", "^trt world", "^cgtn", "^arirang"
+    };
+    private static final java.util.regex.Pattern[] FAME_P = new java.util.regex.Pattern[FAME.length];
+    static {
+        for (int i = 0; i < FAME.length; i++) FAME_P[i] = java.util.regex.Pattern.compile(FAME[i]);
+    }
+
+    private static int fame(Channel c) {
+        for (int i = 0; i < FAME_P.length; i++) if (FAME_P[i].matcher(c.search).find()) return i;
+        return FAME_P.length;
+    }
+
+    // Picture height from names like "(1080p)" or "(720i)"; 400 when the list doesn't say.
+    private static int quality(Channel c) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\((\\d{3,4})[pi]\\)").matcher(c.name);
+        return m.find() ? Integer.parseInt(m.group(1)) : 400;
+    }
+
+    static void rank(List<Channel> list) {
+        final java.util.Map<Channel, int[]> key = new java.util.IdentityHashMap<>();
+        for (Channel c : list) key.put(c, new int[] {fame(c), c.name.contains("Not 24/7") || c.partTime ? 1 : 0, -quality(c)});
+        java.util.Collections.sort(list, (a, b) -> {
+            int[] x = key.get(a), y = key.get(b);
+            for (int i = 0; i < 3; i++) if (x[i] != y[i]) return Integer.compare(x[i], y[i]);
+            return a.search.compareTo(b.search);
+        });
+    }
+
+    private static final String EXTRA_BRASIL = "https://raw.githubusercontent.com/iptv-com/iptv/refs/heads/main/lists/brazil.m3u";
+    // Brazilian pay-TV channels (and Globo's own feeds), which these lists only carry as unofficial
+    // re-streams. Matched at the start of the name, so free channels like "TV Universal" or
+    // "Gospel Cartoon" stay.
+    private static final java.util.regex.Pattern PAY_TV = java.util.regex.Pattern.compile(
+            "(?i)^(espn|sportv|premiere|telecine|hbo|combate|globonews|globoplay novelas|megapix|tnt|warner|band ?sports|"
+            + "discovery|cartoon network|studio universal|fox|universal tv|rede globo|tv globo|globo)\\b");
+
+    // True for a Brazilian channel (tvg-id ".br") from that pay-TV list.
+    static boolean unofficial(Channel ch) {
+        return ch.id != null && ch.id.contains(".br") && PAY_TV.matcher(ch.name).find();
+    }
+
+    // One list: fresh cache, else download, else a stale cache. Throws if there is nothing at all.
+    private static List<Channel> loadList(Context c, String url, String cacheName) throws Exception {
+        File f = new File(c.getFilesDir(), cacheName);
         boolean fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < CACHE_MS;
         if (!fresh) {
             try {
-                download(BASE + CATEGORY_PATHS[category] + ".m3u", f);
+                download(url, f);
             } catch (Exception e) {
                 if (!f.exists()) throw e; // offline and never downloaded
             }
         }
         try (InputStream in = new FileInputStream(f)) {
             return parse(in);
+        }
+    }
+
+    // ---- Favourites and the last channel watched, kept in the app's preferences ----
+
+    private static android.content.SharedPreferences prefs(Context c) {
+        return c.getSharedPreferences("tvaberta", 0);
+    }
+
+    static List<Channel> favorites(Context c) {
+        List<Channel> out = new ArrayList<>();
+        for (String line : prefs(c).getString("favs", "").split("\n")) {
+            Channel ch = line.isEmpty() ? null : Channel.decode(line);
+            if (ch != null) out.add(ch);
+        }
+        return out;
+    }
+
+    static boolean isFavorite(Context c, String url) {
+        for (Channel ch : favorites(c)) if (ch.url.equals(url)) return true;
+        return false;
+    }
+
+    // Adds or removes a channel; returns true if it is a favourite now.
+    static boolean toggleFavorite(Context c, Channel ch) {
+        List<Channel> favs = favorites(c);
+        boolean removed = false;
+        for (java.util.Iterator<Channel> it = favs.iterator(); it.hasNext(); )
+            if (it.next().url.equals(ch.url)) { it.remove(); removed = true; }
+        if (!removed) favs.add(ch);
+        StringBuilder b = new StringBuilder();
+        for (Channel f : favs) b.append(f.encode()).append('\n');
+        prefs(c).edit().putString("favs", b.toString()).apply();
+        return !removed;
+    }
+
+    static void saveLast(Context c, Channel ch, int category) {
+        prefs(c).edit().putString("last", ch.encode()).putInt("lastCategory", category).apply();
+    }
+
+    static Channel last(Context c) {
+        String s = prefs(c).getString("last", null);
+        return s == null ? null : Channel.decode(s);
+    }
+
+    static int lastCategory(Context c) {
+        int i = prefs(c).getInt("lastCategory", 1);
+        return i >= 0 && i < CATEGORY_NAMES.length ? i : 1;
+    }
+
+    // A channel logo, small: from the cache folder, else downloaded once and kept there. Null if none.
+    static android.graphics.Bitmap logo(Context c, String url, int maxH) {
+        if (url == null || url.isEmpty()) return null;
+        File dir = new File(c.getCacheDir(), "logos");
+        dir.mkdirs();
+        File f = new File(dir, Integer.toHexString(url.hashCode()) + ".img");
+        try {
+            if (!f.exists()) {
+                HttpURLConnection con = open(url, null);
+                try {
+                    if (con.getResponseCode() != 200) return null;
+                    File tmp = new File(f.getPath() + ".tmp");
+                    try (InputStream in = con.getInputStream(); OutputStream out = new FileOutputStream(tmp)) {
+                        byte[] buf = new byte[8192];
+                        int total = 0;
+                        for (int n; (n = in.read(buf)) > 0; ) {
+                            out.write(buf, 0, n);
+                            if ((total += n) > 2_000_000) return null; // not a logo
+                        }
+                    }
+                    tmp.renameTo(f);
+                } finally {
+                    con.disconnect();
+                }
+            }
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+            int sample = 1;
+            while (o.outHeight / (sample * 2) >= maxH) sample *= 2;
+            o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = sample;
+            return android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -125,6 +316,8 @@ final class Channels {
                 skip = false;
                 cur.name = nameOf(line);
                 cur.group = attr(line, "group-title");
+                cur.logo = attr(line, "tvg-logo");
+                cur.id = attr(line, "tvg-id");
                 cur.referrer = attr(line, "http-referrer");
                 cur.userAgent = attr(line, "http-user-agent");
                 if (cur.name.contains("[Geo-blocked]")) skip = true;
@@ -137,6 +330,7 @@ final class Channels {
             } else if (!line.startsWith("#") && cur != null) {
                 if (!skip) {
                     cur.url = line;
+                    cur.partTime = cur.name.contains("[Not 24/7]");
                     cur.name = cur.name.replace("[Not 24/7]", "").trim();
                     cur.search = fold(cur.name);
                     out.add(cur);

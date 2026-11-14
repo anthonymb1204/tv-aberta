@@ -42,6 +42,22 @@ public class MainActivity extends Activity {
     private ChannelAdapter adapter;
     private int pendingCategory;
     private final Runnable pendingLoad = () -> loadCategory(pendingCategory);
+    // Opening the app goes straight back to the channel watched last; this is its URL until it starts.
+    private String resumeUrl;
+    // Typing a number on the remote jumps to that position in the list.
+    private final StringBuilder digits = new StringBuilder();
+    private final Runnable jump = () -> {
+        int n = Integer.parseInt(digits.toString());
+        digits.setLength(0);
+        if (n >= 1 && n <= shown.size()) {
+            channels.requestFocus();
+            channels.setSelection(n - 1);
+        }
+    };
+    // Channel logos: small, loaded two at a time for the rows on screen, kept in memory and on disk.
+    private final android.util.LruCache<String, android.graphics.drawable.Drawable> logos = new android.util.LruCache<>(90);
+    private final java.util.Set<String> loading = new java.util.HashSet<>(), noLogo = new java.util.HashSet<>();
+    private final java.util.concurrent.ExecutorService logoPool = java.util.concurrent.Executors.newFixedThreadPool(2);
 
     @Override
     protected void onCreate(Bundle state) {
@@ -118,6 +134,13 @@ public class MainActivity extends Activity {
         adapter = new ChannelAdapter();
         channels.setAdapter(adapter);
         channels.setOnItemClickListener((p, v, pos, id) -> play(pos));
+        // Hold OK on a channel (or press Menu) to add it to, or remove it from, the favourites.
+        channels.setOnItemLongClickListener((p, v, pos, id) -> { toggleFavorite(pos); return true; });
+        channels.setOnKeyListener((v, code, ev) -> {
+            if (code != KeyEvent.KEYCODE_MENU) return false;
+            if (ev.getAction() == KeyEvent.ACTION_UP) toggleFavorite(channels.getSelectedItemPosition());
+            return true;
+        });
         LinearLayout.LayoutParams chlp = new LinearLayout.LayoutParams(-1, 0, 1f);
         chlp.topMargin = px(16);
         right.addView(channels, chlp);
@@ -141,9 +164,29 @@ public class MainActivity extends Activity {
             loadCategory(pos);
             if (!shown.isEmpty()) channels.requestFocus();
         });
+        // Start on the channel watched last (Back then shows its list), else on the favourites if
+        // there are any, else on Brasil.
+        Channels.Channel last = state == null ? Channels.last(this) : null;
+        int start = last != null ? Channels.lastCategory(this)
+                : Channels.favorites(this).isEmpty() ? 1 : Channels.FAVORITES;
+        if (last != null) resumeUrl = last.url;
         categories.requestFocus();
-        categories.setSelection(0);
-        loadCategory(0);
+        categories.setSelection(start);
+        loadCategory(start);
+    }
+
+    private void toggleFavorite(int pos) {
+        if (pos < 0 || pos >= shown.size()) return;
+        Channels.Channel ch = shown.get(pos);
+        boolean fav = Channels.toggleFavorite(this, ch);
+        Toast.makeText(this, (fav ? "★ " + ch.name + " nos favoritos" : ch.name + " saiu dos favoritos"),
+                Toast.LENGTH_SHORT).show();
+        if (category == Channels.FAVORITES) {
+            all = Channels.favorites(this);
+            filter();
+        } else {
+            adapter.notifyDataSetChanged();
+        }
     }
 
     private void loadCategory(final int which) {
@@ -166,6 +209,19 @@ public class MainActivity extends Activity {
                 all = result;
                 filter();
                 if (err != null) status.setText("Sem conexão com a lista (" + err + ")");
+                else if (which == Channels.FAVORITES && result.isEmpty())
+                    status.setText("Nenhum favorito ainda: segure OK num canal para favoritar");
+                if (resumeUrl != null) {
+                    String url = resumeUrl;
+                    resumeUrl = null;
+                    for (int i = 0; i < shown.size(); i++)
+                        if (shown.get(i).url.equals(url)) {
+                            channels.requestFocus();
+                            channels.setSelection(i);
+                            play(i);
+                            return;
+                        }
+                }
             });
         }).start();
     }
@@ -193,7 +249,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 Channels.playing = list;
-                startActivity(new Intent(this, PlayerActivity.class).putExtra("index", pos));
+                startActivity(new Intent(this, PlayerActivity.class).putExtra("index", pos).putExtra("category", category));
             });
         }).start();
     }
@@ -201,6 +257,16 @@ public class MainActivity extends Activity {
     // Typing on the remote: any letter key while the channel list has focus jumps to search.
     @Override
     public boolean dispatchKeyEvent(KeyEvent ev) {
+        int code = ev.getKeyCode();
+        if (!search.hasFocus() && code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) {
+            if (ev.getAction() == KeyEvent.ACTION_DOWN && digits.length() < 5) {
+                digits.append((char) ('0' + code - KeyEvent.KEYCODE_0));
+                status.setText("Ir para o canal " + digits + "…");
+                ui.removeCallbacks(jump);
+                ui.postDelayed(jump, 1200);
+            }
+            return true;
+        }
         if (ev.getAction() == KeyEvent.ACTION_DOWN && !search.hasFocus() && ev.isPrintingKey()
                 && Character.isLetter(ev.getUnicodeChar())) {
             search.requestFocus();
@@ -222,9 +288,58 @@ public class MainActivity extends Activity {
             TextView t = v != null ? (TextView) v : row(28);
             Channels.Channel c = shown.get(p);
             String group = c.group == null ? "" : c.group.replace(";", " · ");
-            t.setText(group.isEmpty() ? c.name : c.name + "   ·   " + group);
+            String name = (p + 1) + "   " + (category != Channels.FAVORITES && Channels.isFavorite(MainActivity.this, c.url)
+                    ? "★ " : "") + c.name;
+            t.setText(group.isEmpty() ? name : name + "   ·   " + group);
+            // The logo to the left: from memory, or a blank of the same size while it loads.
+            t.setTag(c.logo);
+            android.graphics.drawable.Drawable d = c.logo == null ? null : logos.get(c.logo);
+            if (d == null) {
+                d = new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT);
+                if (c.logo != null) fetchLogo(c.logo);
+            }
+            d.setBounds(0, 0, px(LOGO_W), px(LOGO_H));
+            t.setCompoundDrawables(d, null, null, null);
+            t.setCompoundDrawablePadding(px(22));
             return t;
         }
+    }
+
+    private static final int LOGO_W = 84, LOGO_H = 48;
+
+    private void fetchLogo(final String url) {
+        if (loading.contains(url) || noLogo.contains(url)) return;
+        loading.add(url);
+        logoPool.execute(() -> {
+            android.graphics.Bitmap bm = Channels.logo(this, url, px(LOGO_H) * 2);
+            android.graphics.drawable.Drawable d = null;
+            if (bm != null) {
+                // Fit inside the logo box, keeping its shape, on a transparent picture.
+                int w = px(LOGO_W), h = px(LOGO_H);
+                android.graphics.Bitmap box = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+                float s = Math.min((float) w / bm.getWidth(), (float) h / bm.getHeight());
+                int dw = Math.round(bm.getWidth() * s), dh = Math.round(bm.getHeight() * s);
+                new android.graphics.Canvas(box).drawBitmap(bm, null,
+                        new android.graphics.Rect((w - dw) / 2, (h - dh) / 2, (w - dw) / 2 + dw, (h - dh) / 2 + dh),
+                        new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+                bm.recycle();
+                d = new android.graphics.drawable.BitmapDrawable(getResources(), box);
+            }
+            final android.graphics.drawable.Drawable logo = d;
+            ui.post(() -> {
+                loading.remove(url);
+                if (logo == null) { noLogo.add(url); return; }
+                logos.put(url, logo);
+                // Only the rows on screen showing this logo are updated.
+                for (int i = 0; i < channels.getChildCount(); i++) {
+                    View row = channels.getChildAt(i);
+                    if (url.equals(row.getTag()) && row instanceof TextView) {
+                        logo.setBounds(0, 0, px(LOGO_W), px(LOGO_H));
+                        ((TextView) row).setCompoundDrawables(logo, null, null, null);
+                    }
+                }
+            });
+        });
     }
 
     private ListView list() {
@@ -273,4 +388,10 @@ public class MainActivity extends Activity {
     }
 
     private int px(int v) { return Math.round(v * scale); }
+
+    @Override
+    protected void onDestroy() {
+        logoPool.shutdownNow();
+        super.onDestroy();
+    }
 }

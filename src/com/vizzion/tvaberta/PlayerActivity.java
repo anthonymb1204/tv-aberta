@@ -77,6 +77,7 @@ public class PlayerActivity extends Activity {
 
     private void start() {
         Channels.Channel ch = current();
+        Channels.saveLast(this, ch, getIntent().getIntExtra("category", 1));
         show((index + 1) + "/" + Channels.playing.size() + "  " + ch.name + "\nCarregando…", 0);
         ui.removeCallbacks(stalled);
         ui.postDelayed(stalled, 20000);
@@ -105,8 +106,28 @@ public class PlayerActivity extends Activity {
         start();
     }
 
+    // Typing a channel number: digits gather for a moment, then it jumps there.
+    private final StringBuilder digits = new StringBuilder();
+    private final Runnable jump = () -> {
+        int n = Integer.parseInt(digits.toString());
+        digits.setLength(0);
+        if (n >= 1 && n <= Channels.playing.size()) {
+            index = n - 1;
+            start();
+        } else {
+            show("Canal " + n + " não existe nesta lista", 2500);
+        }
+    };
+
     @Override
     public boolean onKeyDown(int code, KeyEvent ev) {
+        if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) {
+            if (digits.length() < 5) digits.append((char) ('0' + code - KeyEvent.KEYCODE_0));
+            show("Canal " + digits + "…", 0);
+            ui.removeCallbacks(jump);
+            ui.postDelayed(jump, 1300);
+            return true;
+        }
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_CHANNEL_UP:

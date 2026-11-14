@@ -1,0 +1,50 @@
+# Novidades do TV Aberta, mostradas no app (botão "Novidades") e lidas daqui pelo app para avisar
+# o que vem na versão nova. Formato: o número da versão numa linha, as novidades embaixo (curtas),
+# uma linha em branco entre as versões. A mais nova primeiro.
+
+1.7.0
+Aviso quando sai versão nova, com botão para atualizar direto no app
+Botão Novidades e relógio na tela de canais
+
+1.6.3
++33 canais: emissoras de TV aberta no YouTube
+
+1.6.2
+Listas para adicionar canais à mão no código
+
+1.6.1
++18 canais do YouTube (GOAT, Xsports, N Sports, CBF TV...), com aviso de "ao vivo"
+
+1.6.0
++416 canais e Pluto TV completo funcionando
+Categorias novas: Séries, Novelas, Anime, Documentários, Música, Portugal e Mundo
+
+1.5.3
+Canais fora do ar somem da lista sozinhos
+
+1.5.2
+Novo player no celular e transmissão para a TV (Google Cast)
+
+1.5.1
+Brilho, volume e trava para crianças no celular
+
+1.5.0
+Versão para celular
+
+1.4
+Globo ao vivo pelo Globoplay
+
+1.3
+CazéTV ao vivo pelo YouTube, em destaque nos dias de jogo
+
+1.2.1
+Voltam TV Câmara, TV Senado e TV Justiça
+
+1.2
+Só os canais grandes, sem versões estrangeiras
+
+1.1
+Favoritos, volta no último canal, logos e números
+
+1.0
+Primeira versão

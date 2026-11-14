@@ -97,6 +97,11 @@ public class MainActivity extends Activity {
             categories.setSelection(start);
         }
         loadCategory(start);
+
+        android.content.IntentFilter f = new android.content.IntentFilter(Updater.ACTION_STATUS);
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(installStatus, f, android.content.Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(installStatus, f);
+        checkUpdate();
     }
 
     // The TV: categories on the left, status, search and channels on the right.
@@ -130,10 +135,18 @@ public class MainActivity extends Activity {
         left.addView(categories, clp);
         root.addView(left, new LinearLayout.LayoutParams(px(400), -1));
 
-        // Right: status, search and channels.
+        // Right: status with the clock and the Novidades button on its right, then search and channels.
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
-        right.addView(status);
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(status, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView clock = clock("HH:mm   ·   EEEE, d 'de' MMMM", 24);
+        LinearLayout.LayoutParams ckl = new LinearLayout.LayoutParams(-2, -2);
+        ckl.rightMargin = px(28);
+        top.addView(clock, ckl);
+        top.addView(newsButton());
+        right.addView(top);
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
         slp.topMargin = px(16);
         right.addView(search, slp);
@@ -177,12 +190,11 @@ public class MainActivity extends Activity {
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         name.setText("TV Aberta");
         titles.addView(name);
-        TextView sub = text(24, 0x99FFFFFF);
-        sub.setText("Canais abertos e gratuitos");
-        titles.addView(sub);
-        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
+        titles.addView(clock("HH:mm  ·  EEE, d 'de' MMM", 24)); // the time and date under the name
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, -2, 1f);
         tl.leftMargin = px(28);
         head.addView(titles, tl);
+        head.addView(newsButton()); // top right
         root.addView(head);
 
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
@@ -215,6 +227,160 @@ public class MainActivity extends Activity {
         root.addView(channels, new LinearLayout.LayoutParams(-1, 0, 1f));
         return root;
     }
+
+    // ---- Clock, Novidades and updates ----------------------------------------------------------
+
+    private TextView newsButton;
+    private Updater.Release update; // a newer version, when there is one
+    private android.app.AlertDialog progressDialog;
+
+    private TextView clock(String format, int size) {
+        android.widget.TextClock c = new android.widget.TextClock(this);
+        c.setFormat12Hour(format);
+        c.setFormat24Hour(format);
+        c.setTextSize(TypedValue.COMPLEX_UNIT_PX, px(size));
+        c.setTextColor(0xB3FFFFFF);
+        c.setSingleLine(true);
+        return c;
+    }
+
+    // "Novidades" (what's new); "● Nova versão" in red when an update is out.
+    private TextView newsButton() {
+        newsButton = text(tv ? 24 : 24, Color.WHITE);
+        newsButton.setPadding(px(26), px(12), px(26), px(12));
+        newsButton.setFocusable(true);
+        newsButton.setClickable(true);
+        newsButton.setBackground(selector(0x1AFFFFFF, 0x40FFFFFF));
+        newsButton.setOnClickListener(v -> showNews(false));
+        showUpdateState();
+        return newsButton;
+    }
+
+    private void showUpdateState() {
+        if (newsButton == null) return;
+        if (update == null) {
+            newsButton.setText("✦  Novidades");
+            return;
+        }
+        android.text.SpannableString s = new android.text.SpannableString("●  Nova versão");
+        s.setSpan(new android.text.style.ForegroundColorSpan(0xFFFF5A5A), 0, 1, 0);
+        newsButton.setText(s);
+    }
+
+    // Asks GitHub (at most every 3 hours) whether there's a newer version; the first time a version
+    // is found, the notice opens by itself.
+    private void checkUpdate() {
+        new Thread(() -> {
+            Updater.Release r = Updater.check(this, false);
+            ui.post(() -> {
+                update = r;
+                showUpdateState();
+                if (r != null && !Updater.noticeShown(this, r.version) && !isFinishing()) {
+                    Updater.markNoticeShown(this, r.version);
+                    showNews(true);
+                }
+            });
+        }).start();
+    }
+
+    // The update (if any) with what it brings, then what each version brought, newest first.
+    private void showNews(boolean auto) {
+        final Updater.Release r = update;
+        new Thread(() -> {
+            List<Updater.Notes> notes = Updater.notes(this, true);
+            ui.post(() -> {
+                if (isFinishing()) return;
+                String mine = Updater.current(this);
+                LinearLayout box = new LinearLayout(this);
+                box.setOrientation(LinearLayout.VERTICAL);
+                box.setPadding(px(tv ? 56 : 44), px(20), px(tv ? 56 : 44), px(8));
+                if (r != null) {
+                    TextView h = text(30, 0xFFFF8A80);
+                    h.setText("Versão " + r.version + " disponível");
+                    h.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                    box.addView(h);
+                    for (Updater.Notes n : notes)
+                        if (Updater.compare(n.version, mine) > 0) addNotes(box, n, false);
+                    TextView sep = text(22, 0x80FFFFFF);
+                    sep.setText("Você está na versão " + mine);
+                    sep.setPadding(0, px(8), 0, px(20));
+                    box.addView(sep);
+                }
+                for (Updater.Notes n : notes)
+                    if (Updater.compare(n.version, mine) <= 0) addNotes(box, n, n.version.equals(mine));
+                android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+                scroll.addView(box);
+                android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this,
+                        android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle(r != null ? "Atualização do TV Aberta" : "Novidades do TV Aberta")
+                        .setView(scroll);
+                if (r != null) b.setPositiveButton("Atualizar agora", (d, w) -> startUpdate(r)).setNegativeButton("Depois", null);
+                else b.setPositiveButton("OK", null);
+                android.app.AlertDialog d = b.show();
+                if (r != null) d.getButton(android.app.AlertDialog.BUTTON_POSITIVE).requestFocus();
+            });
+        }).start();
+    }
+
+    private void addNotes(LinearLayout box, Updater.Notes n, boolean installed) {
+        TextView v = text(26, Color.WHITE);
+        v.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        v.setText(n.version + (installed ? "   (instalada)" : ""));
+        v.setPadding(0, px(14), 0, px(4));
+        box.addView(v);
+        for (String line : n.lines) {
+            TextView l = text(24, 0xCCFFFFFF);
+            l.setText("•  " + line);
+            l.setPadding(px(8), px(2), 0, px(2));
+            box.addView(l);
+        }
+    }
+
+    // Downloads and installs the update. Android asks the person to confirm; the first time, it may
+    // ask to allow TV Aberta to install updates.
+    private void startUpdate(final Updater.Release r) {
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            Toast.makeText(this, "Permita que o TV Aberta instale atualizações e toque em Atualizar de novo.",
+                    Toast.LENGTH_LONG).show();
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        android.net.Uri.parse("package:" + getPackageName())));
+                return;
+            } catch (Exception ignored) {} // some TVs have no such screen: the installer asks instead
+        }
+        final TextView msg = text(26, Color.WHITE);
+        msg.setPadding(px(56), px(28), px(56), px(28));
+        msg.setText("Baixando a versão " + r.version + "…");
+        progressDialog = new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Atualizando").setView(msg).setCancelable(false).show();
+        new Thread(() -> Updater.install(this, r, new Updater.Progress() {
+            @Override public void at(int pct) {
+                ui.post(() -> msg.setText(pct >= 0 ? "Baixando a versão " + r.version + "…  " + pct + "%" : "Baixando…"));
+            }
+            @Override public void failed(String why) {
+                ui.post(() -> {
+                    if (progressDialog != null) progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, "Não deu para atualizar (" + why + "). Tente de novo mais tarde.",
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        })).start();
+    }
+
+    // Android's installer reports back here: it needs the person's OK, it worked, or it failed.
+    private final android.content.BroadcastReceiver installStatus = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context c, Intent i) {
+            int st = i.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999);
+            if (progressDialog != null) progressDialog.dismiss();
+            if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                Intent confirm = i.getParcelableExtra(Intent.EXTRA_INTENT);
+                if (confirm != null) try { startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); } catch (Exception ignored) {}
+            } else if (st != android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+                String m = i.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
+                Toast.makeText(c, "A atualização não foi instalada" + (m == null ? "." : " (" + m + ")."), Toast.LENGTH_LONG).show();
+            }
+        }
+    };
 
     // Colours the chosen category: in the TV's list, or the phone's chip (filled) and the others.
     private void showCategory() {
@@ -644,6 +810,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        try { unregisterReceiver(installStatus); } catch (Exception ignored) {}
         logoPool.shutdownNow();
         ytPool.shutdownNow();
         super.onDestroy();

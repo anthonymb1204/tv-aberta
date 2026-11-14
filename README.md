@@ -14,7 +14,8 @@
   - **Jornalismo:** CNN Brasil, Jovem Pan News, BandNews, Record News, SBT News, BM&C News, VEJA+.
   - **TVs regionais, educativas, legislativas, religiosas e comunitárias** de todo o Brasil.
   - **Pluto TV Brasil inteiro (185 canais):** filmes, séries, novelas, anime, Nickelodeon, MTV, reality, esportes, documentários.
-  - **Esportes oficiais gratuitos:** CazéTV, FIFA+, Red Bull TV, NBA TV, UFC, WWE.
+  - **Esportes oficiais gratuitos:** FIFA+, Red Bull TV, NBA TV, UFC, WWE.
+  - **Canais do YouTube que transmitem ao vivo de graça:** CazéTV, Canal GOAT, Xsports, N Sports, SportyNet, TNT Sports Brasil, CBF TV, Kings League Brasil, Time Brasil TV, Paulistão, Desimpedidos e Jovem Pan Esportes; e, no jornalismo, Jovem Pan News, CNN Brasil, SBT News, Record News, Band Jornalismo e UOL. Os que estão ao vivo sobem para o topo com **● AO VIVO** e o título da transmissão; OK abre a live no app do YouTube (ou a página do canal, se não houver live).
   - **Portugal:** RTP, SIC, TVI, Porto Canal, ARTV e outros canais portugueses com transmissão oficial gratuita.
   - **Mundo:** canais estrangeiros gratuitos (Euronews, CGTN, NHK World, Das Erste, La 1, TV5 Monde...).
   - **Notícias internacionais:** BBC, CNN International, DW, France 24, Al Jazeera.

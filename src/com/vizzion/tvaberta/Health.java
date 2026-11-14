@@ -28,7 +28,7 @@ final class Health {
 
     // Channels that aren't streams (CazéTV opens YouTube, Globo opens Globoplay) are never tested.
     static boolean testable(Channels.Channel ch) {
-        return !Channels.isCaze(ch) && !Channels.isGloboplay(ch);
+        return !Channels.isCaze(ch) && !Channels.isGloboplay(ch) && !Channels.isYouTube(ch);
     }
 
     // Known to be off the air, recently enough to still believe it.

@@ -339,6 +339,7 @@ public class MainActivity extends Activity {
                 all = result;
                 filter();
                 checkHealth(result);
+                checkLives(result, token);
                 if (err != null) status.setText("Sem conexão com a lista (" + err + ")");
                 else if (which == Channels.FAVORITES && result.isEmpty())
                     status.setText(tv ? "Nenhum favorito ainda: segure OK num canal para favoritar"
@@ -388,6 +389,59 @@ public class MainActivity extends Activity {
             if (Channels.key(shown.get(i)).equals(keep)) { channels.setSelection(i); break; }
     };
 
+    // ---- YouTube channels: which are live now ----
+
+    private final java.util.Map<String, CazeLive> ytLive = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Long> ytAt = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ExecutorService ytPool = java.util.concurrent.Executors.newFixedThreadPool(4);
+
+    // The channel's current (or today's) live, read from its "/live" page at most every 10 minutes
+    // (or now, when asked to be fresh). Null when there's none. Call it off the main thread.
+    private CazeLive liveOf(Channels.Channel ch, boolean fresh) {
+        if (Channels.isCaze(ch)) {
+            if (fresh || caze == null || System.currentTimeMillis() - cazeAt > 10 * 60 * 1000L) {
+                caze = CazeLive.fetch();
+                cazeAt = System.currentTimeMillis();
+            }
+            return caze;
+        }
+        Long at = ytAt.get(ch.url);
+        if (fresh || at == null || System.currentTimeMillis() - at > 10 * 60 * 1000L) {
+            CazeLive cz = CazeLive.fetch(ch.url);
+            if (cz != null) ytLive.put(ch.url, cz); else ytLive.remove(ch.url);
+            ytAt.put(ch.url, System.currentTimeMillis());
+        }
+        return ytLive.get(ch.url);
+    }
+
+    // Reads the YouTube channels' live status in the background; the ones live now (or later today)
+    // move to the top of the list, with "● AO VIVO" and the live's title.
+    private void checkLives(final List<Channels.Channel> list, final int token) {
+        final List<Channels.Channel> yt = new ArrayList<>();
+        for (Channels.Channel c : list) if (Channels.isYouTube(c) && !Channels.isCaze(c)) yt.add(c);
+        if (yt.isEmpty()) return;
+        final java.util.concurrent.atomic.AtomicInteger left = new java.util.concurrent.atomic.AtomicInteger(yt.size());
+        for (final Channels.Channel c : yt) ytPool.execute(() -> {
+            liveOf(c, false);
+            if (left.decrementAndGet() > 0) return;
+            ui.post(() -> {
+                if (token != loadToken) return;
+                List<Channels.Channel> live = new ArrayList<>(), rest = new ArrayList<>();
+                for (Channels.Channel ch : all) {
+                    CazeLive cz = Channels.isYouTube(ch) && !Channels.isCaze(ch) ? ytLive.get(ch.url) : null;
+                    (cz != null && cz.today() ? live : rest).add(ch);
+                }
+                if (live.isEmpty()) { adapter.notifyDataSetChanged(); return; }
+                // Live now first, then the ones later today; CazéTV on a game day stays first of all.
+                java.util.Collections.sort(live, (a, b) -> Boolean.compare(!ytLive.get(a.url).liveNow, !ytLive.get(b.url).liveNow));
+                int at = !rest.isEmpty() && Channels.isCaze(rest.get(0)) && caze != null && caze.today() ? 1 : 0;
+                rest.addAll(at, live);
+                all = rest;
+                hideDown.run(); // filter again, keeping the selected channel
+            });
+        });
+    }
+
     private void checkHealth(List<Channels.Channel> list) {
         Health.check(this, list, (ch, ok) -> {
             if (ok) return;
@@ -410,13 +464,15 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        if (Channels.isCaze(ch)) { // the official live, in the YouTube app
-            Toast.makeText(this, "Abrindo a CazéTV no YouTube…", Toast.LENGTH_SHORT).show();
+        if (Channels.isYouTube(ch)) { // CazéTV, GOAT, N Sports...: the channel's live, in the YouTube app
+            Toast.makeText(this, "Abrindo " + ch.name + " no YouTube…", Toast.LENGTH_SHORT).show();
             new Thread(() -> {
-                CazeLive cz = caze != null && System.currentTimeMillis() - cazeAt < 10 * 60 * 1000L ? caze : CazeLive.fetch();
+                CazeLive cz = liveOf(ch, true);
                 ui.post(() -> {
-                    if (cz == null) Toast.makeText(this, "A CazéTV não está ao vivo agora.", Toast.LENGTH_LONG).show();
-                    else CazeLive.open(this, cz.videoId);
+                    if (cz != null) { CazeLive.open(this, cz.videoId); return; }
+                    // No live, nothing scheduled: the channel itself, with its past lives and videos.
+                    Toast.makeText(this, ch.name + " não está ao vivo agora. Abrindo o canal.", Toast.LENGTH_LONG).show();
+                    CazeLive.openUrl(this, ch.url.replaceFirst("/live$", "/streams"));
                 });
             }).start();
             return;
@@ -475,8 +531,8 @@ public class MainActivity extends Activity {
             String group = c.group == null ? "" : c.group.replace(";", " · ");
             String name = (p + 1) + "   " + (category != Channels.FAVORITES && Channels.isFavorite(MainActivity.this, c)
                     ? "★ " : "") + c.name;
-            CazeLive cz = caze;
-            if (Channels.isCaze(c) && cz != null && cz.today()) {
+            CazeLive cz = Channels.isCaze(c) ? caze : Channels.isYouTube(c) ? ytLive.get(c.url) : null;
+            if (cz != null && cz.today()) {
                 // Game day: "● AO VIVO" in red (or today's time), then the game.
                 String tag = cz.liveNow ? "●  AO VIVO" : "hoje às " + cz.startTime();
                 android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder(name + "   ");
@@ -589,6 +645,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         logoPool.shutdownNow();
+        ytPool.shutdownNow();
         super.onDestroy();
     }
 }

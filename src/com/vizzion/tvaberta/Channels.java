@@ -153,6 +153,7 @@ final class Channels {
                 add(out, seen, ch);
             }
         }
+        addYouTube(out, seen); // before the lists, so CazéTV's re-streams there count as repeats
         String[][] lists2 = {{IPTVORG_POR, "por.m3u"}, {IPTVORG_BR, "cat_countries_br.m3u"}, {EXTRA_BRASIL, "extra_brazil.m3u"},
                 {FREE_TV, "free_tv.m3u"}, {M3UPT, "m3upt.m3u"}};
         for (String[] l : lists2) {
@@ -188,6 +189,50 @@ final class Channels {
         pool = out;
         poolAt = System.currentTimeMillis();
         return out;
+    }
+
+    // ---- Free channels that broadcast live on YouTube (official channels, checked by hand) ----
+    // Each opens its current live in the YouTube app; when there's none, its channel page. The list
+    // shows "● AO VIVO" beside the ones live right now (see MainActivity).
+    private static final String YT_IMG = "https://yt3.googleusercontent.com/";
+    private static final String[][] YOUTUBE = {
+            // name, @handle, category, avatar (after YT_IMG)
+            {"CazéTV", "CazeTV", "s", "Zm3t3pgNIYY1HgkWYaWmU3E--oljMiWqX_2Ig4zkxziTkP3VOR9TGUmgJAPu7XrhP06ebxDg"},
+            {"Canal GOAT", "canalgoatbr", "s", "NtXade9YlBhuNpJu5Tcj-PRXH57GtNbON4e6KgaGhZnuqKPDvrhUGcQl88j7F72BKLAaZ72QEow"},
+            {"Xsports", "xsports.brasil", "s", "CTQyaT5nUAWjH0Vb-WIOrecZ3f4mAlS1N4niAFtIAX-g8gpTxITlkOY-dnRyh3th_1HxJ7KE"},
+            {"N Sports", "nsports", "s", "tt9WaJh3uawWJUv4upgjMNJgirABgKgaionIiPMTor-5rL5EnszV6sL8KDLOwXmqUZmKfnlu"},
+            {"SportyNet", "SportyNetBrasil", "s", "gljY0R_KSQ6j9HLIgFWayZnekdpxPfCH-aKmm_2OFV5nru3CuGMtPTL8cG0qliPcM65gtTPb"},
+            {"TNT Sports Brasil", "TNTSportsBR", "s", "VQ2IGEcrhMSpuFb3RFDQOsVV9xI0shwQVorL8VLUGUGaV61Va1UMo4iwFOBVfOsrwTTYET22Hdk"},
+            {"Time Brasil TV", "timebrasil", "s", "bY8s9kltdXLl_ZBnEFtR79YgZeRZ7U2ZuqMWllczYi4vNX9U6WqpNcrfbIaiOCRBmddOlHgrFQ0"},
+            {"Paulistão", "paulistao", "s", "ivecqYD8VCxv432H9vDhzLPeJgorSXGs7dke0o6ku2PCqyQFQzBZnW4qizS6UFIg7ICej995DQ"},
+            {"Desimpedidos", "desimpedidos", "s", "XL-Cyyvy-Qio3xasV0I1WCy3Qqps9nv0J0c16iXwmCmctXRUACDz3ZqCEgf_sOTUICkNXd9M"},
+            {"CBF TV", "brasil", "s", "wjJRTNty8R-pR-gjyqP9bejfxUsTT4GHg98tOt7sLsdJCJ8z_JWLnPzxtO9fSy-Qs4uc5y4U"},
+            {"Kings League Brasil", "KingsLeagueBrazil", "s", "iU7THtZxCokNyjkh17x_4zQjN_8BlLwQXoLkfDqYzwlAfpbGOvZG_3gtEH8sLuRgYEuX4sw22UA"},
+            {"Jovem Pan Esportes", "jovempanesportes", "s", "oBgJPP0LOnImgTAk6TzhGdb-cENNNjuzdedazT6VGVZtagNc1pTmUZgw82pf_y3s73vCJ4-2Lg"},
+            {"Jovem Pan News no YouTube", "jovempannews", "n", "ceWsIRiUn75sLwoPwHZgsIzwmjBJd_SzaHkyS3h1pXZ3hDQ6orkYvm8UL66yaF7SQdRpGHZGWQ"},
+            {"CNN Brasil no YouTube", "CNNbrasil", "n", "TUNo33rJfSv06L2UyQWsOPUMJglHptsHR2mFZOshcXL45xRJ1YgpRZWpb76IChbSBwyG1TBUvA"},
+            {"SBT News no YouTube", "SBTNews", "n", "3_uPF3ufjORBgR9Ii_4XoSw92CeIWI2FabiuH-kXT321ykNrWC0bmpdsmm7bdzlynDiX3Qx2ZQ"},
+            {"Record News no YouTube", "recordnews", "n", "HCLS0suaZ1ZqXvIzGsxElF0RKkonHsd7LqMsgJOoJhtHcrj2sS61NYSciv7okzmIQ5Fj9gRyZA"},
+            {"Band Jornalismo", "bandjornalismo", "n", "qqad5hNhAtWZblXQwSFFki_sqD0xied7pUw3con6MAsAenTbt0ZF6r0lqP3BCl8ZWQw_PyyOKA"},
+            {"UOL", "UOL", "n", "ukOUdTx4uhpLFu-xVSb2XIxRW22eljzVyEG-4X010tgxuQR9I8LvA1bzO-s6NlOUj6Z9FRPHWs8"},
+    };
+
+    static boolean isYouTube(Channel ch) {
+        return ch != null && ch.url != null && ch.url.startsWith("https://www.youtube.com/@");
+    }
+
+    private static void addYouTube(List<Channel> out, java.util.Set<String> seen) {
+        for (String[] y : YOUTUBE) {
+            Channel ch = new Channel();
+            ch.name = y[0];
+            ch.search = fold(ch.name);
+            ch.url = "https://www.youtube.com/@" + y[1] + "/live";
+            ch.group = "YouTube";
+            ch.logo = YT_IMG + y[3] + "=s176-c-k-c0x00ffffff-no-rj";
+            ch.country = "br";
+            ch.genre = y[2].equals("s") ? SPORTS : NEWS;
+            if (seen.add(key(ch))) { seen.add(fold(ch.name)); out.add(ch); }
+        }
     }
 
     private static void add(List<Channel> out, java.util.Set<String> seen, Channel ch) {
@@ -378,7 +423,9 @@ final class Channels {
 
     static void rank(List<Channel> list) {
         final java.util.Map<Channel, int[]> key = new java.util.IdentityHashMap<>();
-        for (Channel c : list) key.put(c, new int[] {fame(c), c.name.contains("Not 24/7") || c.partTime ? 1 : 0, -quality(c)});
+        // The YouTube channels come right after the famous ones (they're all big official channels).
+        for (Channel c : list) key.put(c, new int[] {isYouTube(c) && fame(c) == FAME_P.length ? FAME_P.length - 1 : fame(c),
+                c.name.contains("Not 24/7") || c.partTime ? 1 : 0, -quality(c)});
         java.util.Collections.sort(list, (a, b) -> {
             int[] x = key.get(a), y = key.get(b);
             for (int i = 0; i < 3; i++) if (x[i] != y[i]) return Integer.compare(x[i], y[i]);

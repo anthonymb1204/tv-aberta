@@ -16,8 +16,13 @@ final class CazeLive {
 
     // Fetches the page; null when it can't be read. Call it off the main thread.
     static CazeLive fetch() {
+        return fetch(PAGE);
+    }
+
+    // The same for any YouTube channel's "/live" page (TV Aberta's YouTube channels: GOAT, N Sports...).
+    static CazeLive fetch(String page) {
         try {
-            java.net.HttpURLConnection con = (java.net.HttpURLConnection) new java.net.URL(PAGE).openConnection();
+            java.net.HttpURLConnection con = (java.net.HttpURLConnection) new java.net.URL(page).openConnection();
             con.setConnectTimeout(8000);
             con.setReadTimeout(10000);
             con.setRequestProperty("User-Agent",
@@ -65,7 +70,12 @@ final class CazeLive {
 
     // Opens the live in the YouTube app (any app that takes the link, if YouTube for TV isn't there).
     static void open(Context ctx, String videoId) {
-        Uri u = Uri.parse("https://www.youtube.com/watch?v=" + videoId);
+        openUrl(ctx, "https://www.youtube.com/watch?v=" + videoId);
+    }
+
+    // Any YouTube link (a video, or a channel's page), in the YouTube app.
+    static void openUrl(Context ctx, String url) {
+        Uri u = Uri.parse(url);
         Intent i = new Intent(Intent.ACTION_VIEW, u).setPackage(YOUTUBE_TV).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try { ctx.startActivity(i); }
         catch (Exception e) {

@@ -81,7 +81,7 @@ final class Channels {
             if (unofficial(ch) || !famous(ch)) { it.remove(); continue; }
             if (officialCaze(ch)) { if (hasCaze) it.remove(); hasCaze = true; }
         }
-        if (category != 1) { rank(main); return main; }
+        if (category != 1) { rank(main); addGlobo(category, main); return main; }
         // Brasil also gets the regional and community channels of iptv-com's list, without repeats.
         // Pay-TV brands there come from unofficial re-streams, so they are left out.
         try {
@@ -93,7 +93,29 @@ final class Channels {
             }
         } catch (Exception ignored) {} // the extra list is a bonus: Brasil still works without it
         rank(main);
+        addGlobo(category, main);
         return main;
+    }
+
+    // Globo, the most-watched channel, at the top of Brasil and Todos: it opens "Agora na TV" in the
+    // Globoplay app (free with a Globo account), the official way to watch it live.
+    static final String GLOBOPLAY = "https://globoplay.globo.com/agora-na-tv/";
+    private static final String GLOBO_LOGO =
+            "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c9/TV_Globo_2025.svg/330px-TV_Globo_2025.svg.png";
+
+    private static void addGlobo(int category, List<Channel> list) {
+        if (category != 1 && category != CATEGORY_NAMES.length - 1) return; // Brasil and Todos
+        Channel g = new Channel();
+        g.name = "Globo";
+        g.search = fold(g.name);
+        g.url = GLOBOPLAY;
+        g.group = "Ao vivo no Globoplay";
+        g.logo = GLOBO_LOGO;
+        list.add(0, g);
+    }
+
+    static boolean isGloboplay(Channel ch) {
+        return ch != null && GLOBOPLAY.equals(ch.url);
     }
 
     // Only the big names, most famous first (the lists carry no audience numbers, so this is chosen by
@@ -212,7 +234,9 @@ final class Channels {
         List<Channel> out = new ArrayList<>();
         for (String line : prefs(c).getString("favs", "").split("\n")) {
             Channel ch = line.isEmpty() ? null : Channel.decode(line);
-            if (ch != null) { officialCaze(ch); out.add(ch); }
+            if (ch == null || PAY_TV.matcher(ch.name).find()) continue; // unofficial pay-TV re-streams never play
+            officialCaze(ch);
+            out.add(ch);
         }
         return out;
     }

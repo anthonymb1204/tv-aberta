@@ -253,6 +253,16 @@ public class MainActivity extends Activity {
     private void play(final int pos) {
         if (pos < 0 || pos >= shown.size()) return;
         final Channels.Channel ch = shown.get(pos);
+        if (Channels.isGloboplay(ch)) { // Globo live, in the Globoplay app
+            Intent g = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Channels.GLOBOPLAY)).setPackage("com.globo.globotv");
+            try { startActivity(g); }
+            catch (Exception e) {
+                Intent app = getPackageManager().getLeanbackLaunchIntentForPackage("com.globo.globotv");
+                if (app != null) startActivity(app);
+                else Toast.makeText(this, "Instale o Globoplay para ver a Globo ao vivo.", Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (Channels.isCaze(ch)) { // the official live, in the YouTube app
             Toast.makeText(this, "Abrindo a CazéTV no YouTube…", Toast.LENGTH_SHORT).show();
             new Thread(() -> {

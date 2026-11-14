@@ -44,6 +44,9 @@ public class MainActivity extends Activity {
     private final Runnable pendingLoad = () -> loadCategory(pendingCategory);
     // Opening the app goes straight back to the channel watched last; this is its URL until it starts.
     private String resumeUrl;
+    // CazéTV's official live, read at most every 10 minutes; on game days it goes to the top.
+    private volatile CazeLive caze;
+    private volatile long cazeAt;
     // Typing a number on the remote jumps to that position in the list.
     private final StringBuilder digits = new StringBuilder();
     private final Runnable jump = () -> {
@@ -169,7 +172,7 @@ public class MainActivity extends Activity {
         Channels.Channel last = state == null ? Channels.last(this) : null;
         int start = last != null ? Channels.lastCategory(this)
                 : Channels.favorites(this).isEmpty() ? 1 : Channels.FAVORITES;
-        if (last != null) resumeUrl = last.url;
+        if (last != null && !Channels.isCaze(last)) resumeUrl = last.url; // CazéTV opens YouTube: not on its own
         categories.requestFocus();
         categories.setSelection(start);
         loadCategory(start);
@@ -202,6 +205,17 @@ public class MainActivity extends Activity {
             String error = null;
             try { list = Channels.load(this, which); }
             catch (Exception e) { list = new ArrayList<>(); error = e.getMessage(); }
+            // Game day: CazéTV first.
+            int ci = -1;
+            for (int i = 0; i < list.size(); i++) if (Channels.isCaze(list.get(i))) ci = i;
+            if (ci >= 0) {
+                if (System.currentTimeMillis() - cazeAt > 10 * 60 * 1000L) {
+                    cazeAt = System.currentTimeMillis();
+                    caze = CazeLive.fetch();
+                }
+                CazeLive cz = caze;
+                if (cz != null && cz.today() && ci > 0) list.add(0, list.remove(ci));
+            }
             final List<Channels.Channel> result = list;
             final String err = error;
             ui.post(() -> {
@@ -239,6 +253,17 @@ public class MainActivity extends Activity {
     private void play(final int pos) {
         if (pos < 0 || pos >= shown.size()) return;
         final Channels.Channel ch = shown.get(pos);
+        if (Channels.isCaze(ch)) { // the official live, in the YouTube app
+            Toast.makeText(this, "Abrindo a CazéTV no YouTube…", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                CazeLive cz = caze != null && System.currentTimeMillis() - cazeAt < 10 * 60 * 1000L ? caze : CazeLive.fetch();
+                ui.post(() -> {
+                    if (cz == null) Toast.makeText(this, "A CazéTV não está ao vivo agora.", Toast.LENGTH_LONG).show();
+                    else CazeLive.open(this, cz.videoId);
+                });
+            }).start();
+            return;
+        }
         final List<Channels.Channel> list = new ArrayList<>(shown);
         Toast.makeText(this, "Testando " + ch.name + "…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
@@ -290,7 +315,19 @@ public class MainActivity extends Activity {
             String group = c.group == null ? "" : c.group.replace(";", " · ");
             String name = (p + 1) + "   " + (category != Channels.FAVORITES && Channels.isFavorite(MainActivity.this, c.url)
                     ? "★ " : "") + c.name;
-            t.setText(group.isEmpty() ? name : name + "   ·   " + group);
+            CazeLive cz = caze;
+            if (Channels.isCaze(c) && cz != null && cz.today()) {
+                // Game day: "● AO VIVO" in red (or today's time), then the game.
+                String tag = cz.liveNow ? "●  AO VIVO" : "hoje às " + cz.startTime();
+                android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder(name + "   ");
+                int s = sb.length();
+                sb.append(tag);
+                sb.setSpan(new android.text.style.ForegroundColorSpan(cz.liveNow ? 0xFFFF5A5A : 0xFF7FC8FF), s, sb.length(), 0);
+                if (cz.title != null && !cz.title.isEmpty()) sb.append("   ·   ").append(cz.title);
+                t.setText(sb);
+            } else {
+                t.setText(group.isEmpty() ? name : name + "   ·   " + group);
+            }
             // The logo to the left: from memory, or a blank of the same size while it loads.
             t.setTag(c.logo);
             android.graphics.drawable.Drawable d = c.logo == null ? null : logos.get(c.logo);

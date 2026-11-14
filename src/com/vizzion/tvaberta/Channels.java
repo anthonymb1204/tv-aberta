@@ -73,10 +73,13 @@ final class Channels {
         if (category == FAVORITES) return favorites(c);
         List<Channel> main = loadList(c, BASE + CATEGORY_PATHS[category] + ".m3u",
                 "cat_" + CATEGORY_PATHS[category].replace('/', '_') + ".m3u");
-        // Only the famous channels, and never the unofficial pay-TV re-streams.
+        // Only the famous channels, and never the unofficial pay-TV re-streams. CazéTV, which the
+        // lists only carry as a re-stream, becomes one entry for its official live on YouTube.
+        boolean hasCaze = false;
         for (java.util.Iterator<Channel> it = main.iterator(); it.hasNext(); ) {
             Channel ch = it.next();
-            if (unofficial(ch) || !famous(ch)) it.remove();
+            if (unofficial(ch) || !famous(ch)) { it.remove(); continue; }
+            if (officialCaze(ch)) { if (hasCaze) it.remove(); hasCaze = true; }
         }
         if (category != 1) { rank(main); return main; }
         // Brasil also gets the regional and community channels of iptv-com's list, without repeats.
@@ -183,6 +186,22 @@ final class Channels {
         }
     }
 
+    // Turns any CazéTV entry into the official one: its YouTube live page. Returns true if it was CazéTV.
+    static boolean officialCaze(Channel ch) {
+        if (ch == null || !ch.search.startsWith("caze")) return false;
+        ch.name = "CazéTV";
+        ch.search = fold(ch.name);
+        ch.url = CazeLive.PAGE;
+        ch.group = "Sports";
+        ch.referrer = null;
+        ch.userAgent = null;
+        return true;
+    }
+
+    static boolean isCaze(Channel ch) {
+        return ch != null && CazeLive.PAGE.equals(ch.url);
+    }
+
     // ---- Favourites and the last channel watched, kept in the app's preferences ----
 
     private static android.content.SharedPreferences prefs(Context c) {
@@ -193,7 +212,7 @@ final class Channels {
         List<Channel> out = new ArrayList<>();
         for (String line : prefs(c).getString("favs", "").split("\n")) {
             Channel ch = line.isEmpty() ? null : Channel.decode(line);
-            if (ch != null) out.add(ch);
+            if (ch != null) { officialCaze(ch); out.add(ch); }
         }
         return out;
     }
@@ -222,7 +241,9 @@ final class Channels {
 
     static Channel last(Context c) {
         String s = prefs(c).getString("last", null);
-        return s == null ? null : Channel.decode(s);
+        Channel ch = s == null ? null : Channel.decode(s);
+        officialCaze(ch);
+        return ch;
     }
 
     static int lastCategory(Context c) {

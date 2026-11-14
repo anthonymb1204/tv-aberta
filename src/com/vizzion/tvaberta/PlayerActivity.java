@@ -115,9 +115,57 @@ public class PlayerActivity extends Activity {
         FrameLayout.LayoutParams rl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         rl.bottomMargin = Math.round(24 * d);
         layer.addView(row, rl);
+
+        // Brightness on the left edge, volume on the right: drag up or down on the bar.
+        brightness = sideSlider(layer, Icon.SUN, Gravity.START, d, v -> setBrightness(v));
+        volume = sideSlider(layer, Icon.SPEAKER, Gravity.END, d, v -> {
+            android.media.AudioManager am = audio();
+            am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC,
+                    Math.round(v * am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)), 0);
+        });
+
+        // The child lock, top right: open padlock; tapping it locks the screen.
+        View lock = roundIcon(Icon.LOCK_OPEN, d);
+        lock.setOnClickListener(v -> setLocked(true));
+        FrameLayout.LayoutParams ll = new FrameLayout.LayoutParams(Math.round(52 * d), Math.round(52 * d), Gravity.TOP | Gravity.END);
+        ll.rightMargin = ll.topMargin = Math.round(16 * d);
+        layer.addView(lock, ll);
+
         layer.setVisibility(View.GONE);
         root.addView(layer, new FrameLayout.LayoutParams(-1, -1));
         controls = layer;
+
+        // While locked, a tap only shows the closed padlock; holding it for a second unlocks.
+        FrameLayout lockLayer = new FrameLayout(this);
+        View closed = roundIcon(Icon.LOCK_CLOSED, d);
+        closed.setOnTouchListener((v, e) -> {
+            int a = e.getActionMasked();
+            if (a == android.view.MotionEvent.ACTION_DOWN) {
+                v.animate().scaleX(1.15f).scaleY(1.15f).setDuration(1000).start();
+                ui.removeCallbacks(hideLockHint);
+                ui.postDelayed(unlock, 1000);
+            } else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL) {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(150).start();
+                ui.removeCallbacks(unlock);
+                ui.postDelayed(hideLockHint, 2500);
+            }
+            return true;
+        });
+        FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(Math.round(52 * d), Math.round(52 * d), Gravity.TOP | Gravity.END);
+        cl.rightMargin = cl.topMargin = Math.round(16 * d);
+        lockLayer.addView(closed, cl);
+        TextView hint = new TextView(this);
+        hint.setText("Segure o cadeado para destravar");
+        hint.setTextColor(Color.WHITE);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        hint.setShadowLayer(6 * d, 0, 0, Color.BLACK);
+        FrameLayout.LayoutParams hl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        hl.rightMargin = Math.round(80 * d);
+        hl.topMargin = Math.round(30 * d);
+        lockLayer.addView(hint, hl);
+        lockLayer.setVisibility(View.GONE);
+        root.addView(lockLayer, new FrameLayout.LayoutParams(-1, -1));
+        lockHint = lockLayer;
         // The channel's name moves right of the back button.
         FrameLayout.LayoutParams blp = (FrameLayout.LayoutParams) banner.getLayoutParams();
         blp.leftMargin = Math.round(80 * d);
@@ -128,11 +176,13 @@ public class PlayerActivity extends Activity {
                 new android.view.GestureDetector.SimpleOnGestureListener() {
                     @Override public boolean onDown(android.view.MotionEvent e) { return true; }
                     @Override public boolean onSingleTapUp(android.view.MotionEvent e) {
-                        if (controls.getVisibility() == View.VISIBLE) hideControls.run(); else keepControls();
+                        if (locked) showLockHint();
+                        else if (controls.getVisibility() == View.VISIBLE) hideControls.run();
+                        else keepControls();
                         return true;
                     }
                     @Override public boolean onFling(android.view.MotionEvent a, android.view.MotionEvent b, float vx, float vy) {
-                        if (a == null || Math.abs(vy) < 800 || Math.abs(b.getY() - a.getY()) < Math.abs(b.getX() - a.getX())) return false;
+                        if (locked || a == null || Math.abs(vy) < 800 || Math.abs(b.getY() - a.getY()) < Math.abs(b.getX() - a.getX())) return false;
                         zap(vy < 0 ? 1 : -1); // swipe up: next channel
                         return true;
                     }
@@ -141,12 +191,115 @@ public class PlayerActivity extends Activity {
     }
 
     private void keepControls() {
+        if (locked) return;
+        boolean wasShown = controls.getVisibility() == View.VISIBLE && controls.getAlpha() == 1f;
         ui.removeCallbacks(hideControls);
         controls.animate().cancel();
         controls.setAlpha(1f);
         controls.setVisibility(View.VISIBLE);
-        show((index + 1) + "/" + Channels.playing.size() + "  " + current().name, 4000);
+        if (!wasShown) {
+            show((index + 1) + "/" + Channels.playing.size() + "  " + current().name, 4000);
+            brightness.setValue(currentBrightness());
+            android.media.AudioManager am = audio();
+            int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+            volume.setValue(max <= 0 ? 0 : am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / (float) max);
+        }
         ui.postDelayed(hideControls, 4000);
+    }
+
+    // ---- Brightness, volume and the child lock ----
+
+    private VSlider brightness, volume;
+    private View lockHint;
+    private boolean locked;
+    private final Runnable hideLockHint = () -> {
+        if (lockHint != null) lockHint.animate().alpha(0f).setDuration(300)
+                .withEndAction(() -> lockHint.setVisibility(View.GONE)).start();
+    };
+    private final Runnable unlock = () -> setLocked(false);
+
+    private void setLocked(boolean on) {
+        locked = on;
+        ui.removeCallbacks(hideLockHint);
+        if (on) {
+            ui.removeCallbacks(hideControls);
+            controls.animate().cancel();
+            controls.setVisibility(View.GONE);
+            showLockHint();
+        } else {
+            lockHint.animate().cancel();
+            lockHint.setVisibility(View.GONE);
+            keepControls();
+        }
+    }
+
+    private void showLockHint() {
+        ui.removeCallbacks(hideLockHint);
+        lockHint.animate().cancel();
+        lockHint.setAlpha(1f);
+        lockHint.setVisibility(View.VISIBLE);
+        ui.postDelayed(hideLockHint, 2500);
+    }
+
+    // A bar on one edge, with its icon above it, both centred vertically.
+    private VSlider sideSlider(FrameLayout parent, int icon, int side, float d, VSlider.Listener l) {
+        android.widget.LinearLayout col = new android.widget.LinearLayout(this);
+        col.setOrientation(android.widget.LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+        android.widget.ImageView iv = new android.widget.ImageView(this);
+        iv.setImageDrawable(new Icon(icon));
+        col.addView(iv, new android.widget.LinearLayout.LayoutParams(Math.round(26 * d), Math.round(26 * d)));
+        VSlider s = new VSlider(this);
+        s.setListener(l);
+        s.onTouched(() -> { ui.removeCallbacks(hideControls); ui.postDelayed(hideControls, 4000); });
+        android.widget.LinearLayout.LayoutParams sl = new android.widget.LinearLayout.LayoutParams(Math.round(48 * d), Math.round(160 * d));
+        sl.topMargin = Math.round(12 * d);
+        col.addView(s, sl);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL | side);
+        lp.leftMargin = lp.rightMargin = Math.round(28 * d);
+        parent.addView(col, lp);
+        return s;
+    }
+
+    private View roundIcon(int icon, float d) {
+        android.widget.ImageView b = new android.widget.ImageView(this);
+        b.setImageDrawable(new Icon(icon));
+        int p = Math.round(14 * d);
+        b.setPadding(p, p, p, p);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(0x99000000);
+        bg.setStroke(Math.round(d), 0x40FFFFFF);
+        b.setBackground(bg);
+        return b;
+    }
+
+    private android.media.AudioManager audio() {
+        return (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+    }
+
+    // Only this app's window gets brighter or darker; the phone's own setting is left alone.
+    private float currentBrightness() {
+        float b = getWindow().getAttributes().screenBrightness;
+        if (b >= 0) return b;
+        try {
+            return android.provider.Settings.System.getInt(getContentResolver(),
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255f;
+        } catch (Exception e) {
+            return 0.5f;
+        }
+    }
+
+    private void setBrightness(float v) {
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = Math.max(0.02f, v);
+        getWindow().setAttributes(lp);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (locked) { showLockHint(); return; } // the lock also keeps Back from closing the channel
+        super.onBackPressed();
     }
 
     private TextView touchButton(String label, float d) {
@@ -225,6 +378,11 @@ public class PlayerActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int code, KeyEvent ev) {
+        if (locked && (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN
+                || code == KeyEvent.KEYCODE_VOLUME_MUTE)) {
+            showLockHint();
+            return true;
+        }
         if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) {
             if (digits.length() < 5) digits.append((char) ('0' + code - KeyEvent.KEYCODE_0));
             show("Canal " + digits + "…", 0);

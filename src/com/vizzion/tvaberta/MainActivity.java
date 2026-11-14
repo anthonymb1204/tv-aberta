@@ -633,12 +633,25 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        if (Channels.isYouTube(ch)) { // CazéTV, GOAT, N Sports...: the channel's live, in the YouTube app
-            Toast.makeText(this, "Abrindo " + ch.name + " no YouTube…", Toast.LENGTH_SHORT).show();
+        if (Channels.isYouTube(ch)) { // CazéTV, GOAT, N Sports...: the channel's live, played inside the app
+            Toast.makeText(this, "Abrindo " + ch.name + "…", Toast.LENGTH_SHORT).show();
             new Thread(() -> {
                 CazeLive cz = liveOf(ch, true);
                 ui.post(() -> {
-                    if (cz != null) { CazeLive.open(this, cz.videoId); return; }
+                    if (cz != null) {
+                        // YouTube's own embedded player, in TV Aberta; up/down go through the list's YouTube
+                        // channels that are live now (and this one).
+                        List<Channels.Channel> yt = new ArrayList<>();
+                        for (Channels.Channel c : shown) {
+                            if (!Channels.isYouTube(c)) continue;
+                            CazeLive l = Channels.isCaze(c) ? caze : ytLive.get(c.url);
+                            if (c == ch || (l != null && l.liveNow)) yt.add(c);
+                        }
+                        YouTubePlayerActivity.list = yt;
+                        startActivity(new Intent(this, YouTubePlayerActivity.class)
+                                .putExtra("index", Math.max(0, yt.indexOf(ch))).putExtra("video", cz.videoId));
+                        return;
+                    }
                     // No live, nothing scheduled: the channel itself, with its past lives and videos.
                     Toast.makeText(this, ch.name + " não está ao vivo agora. Abrindo o canal.", Toast.LENGTH_LONG).show();
                     CazeLive.openUrl(this, ch.url.replaceFirst("/live$", "/streams"));

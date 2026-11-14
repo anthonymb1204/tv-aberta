@@ -15,7 +15,7 @@
   - **TVs regionais, educativas, legislativas, religiosas e comunitárias** de todo o Brasil.
   - **Pluto TV Brasil inteiro (185 canais):** filmes, séries, novelas, anime, Nickelodeon, MTV, reality, esportes, documentários.
   - **Esportes oficiais gratuitos:** FIFA+, Red Bull TV, NBA TV, UFC, WWE.
-  - **Canais do YouTube que transmitem ao vivo de graça:** CazéTV, Canal GOAT, Xsports, N Sports, SportyNet, TNT Sports Brasil, CBF TV, Kings League Brasil, Time Brasil TV, Paulistão, Desimpedidos e Jovem Pan Esportes; e, no jornalismo, Jovem Pan News, CNN Brasil, SBT News, Record News, Band Jornalismo e UOL. Os que estão ao vivo sobem para o topo com **● AO VIVO** e o título da transmissão; OK abre a live no app do YouTube (ou a página do canal, se não houver live).
+  - **Canais do YouTube que transmitem ao vivo de graça:** CazéTV, Canal GOAT, Xsports, N Sports, SportyNet, TNT Sports Brasil, CBF TV, Kings League Brasil, Time Brasil TV, Paulistão, Desimpedidos e Jovem Pan Esportes; e, no jornalismo, Jovem Pan News, CNN Brasil, SBT News, Record News, Band Jornalismo e UOL. Os que estão ao vivo sobem para o topo com **● AO VIVO** e o título da transmissão; OK toca a live dentro do app, no player oficial do YouTube embutido (↑ ↓ troca entre os canais do YouTube ao vivo); se o canal não permitir o player embutido, abre o app do YouTube. Sem live, abre a página do canal.
   - **TV aberta no YouTube:** SBT, Record, RedeTV!, TV Gazeta, TV Brasil, TV Cultura, Canal Futura, TV Aparecida, Rede Vida, Canção Nova, TV Evangelizar, TV Pai Eterno, Rede Família, TV Novo Tempo, Boa Vontade TV, RIT TV, Rede Gospel, TV Mundo Maior, Rede Século 21, Rede Nazaré, TV Justiça, TV Senado, TV Câmara, TV Assembleia MG, Terraviva, Canal Rural, TVE Bahia, Rede Minas, TVE RS, TV Brasil Central, Meio Norte, TV Cidade Verde e TV Aratu (com "no YouTube" no nome).
   - **Portugal:** RTP, SIC, TVI, Porto Canal, ARTV e outros canais portugueses com transmissão oficial gratuita.
   - **Mundo:** canais estrangeiros gratuitos (Euronews, CGTN, NHK World, Das Erste, La 1, TV5 Monde...).
@@ -99,6 +99,8 @@ src/com/vizzion/tvaberta/
   PlayerActivity.java       player em tela cheia, troca de canal, retomada; controles de toque no celular
   Channels.java             download, cache, leitura do M3U, ranking e filtros
   Pluto.java                Pluto TV Brasil direto do Pluto (sessão própria, grade e categorias)
+  YouTubePlayerActivity.java  canais do YouTube tocando no app (player oficial embutido)
+  Updater.java              aviso de versão nova e atualização dentro do app
   Health.java               testa os canais e lembra quais estão fora do ar
   Device.java               TV ou celular, e o tamanho das coisas em cada um
   CastClient.java           transmissão Google Cast (protocolo próprio, sem bibliotecas)

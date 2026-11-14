@@ -2,6 +2,9 @@
 # o que vem na versão nova. Formato: o número da versão numa linha, as novidades embaixo (curtas),
 # uma linha em branco entre as versões. A mais nova primeiro.
 
+1.7.2
+Canais do YouTube tocam dentro do app, sem abrir o YouTube
+
 1.7.1
 Aviso de versão nova chega mais rápido; Novidades confere na hora
 

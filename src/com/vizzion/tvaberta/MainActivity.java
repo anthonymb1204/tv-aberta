@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
         Channels.Channel last = state == null ? Channels.last(this) : null;
         int start = last != null ? Channels.lastCategory(this)
                 : Channels.favorites(this).isEmpty() ? 1 : Channels.FAVORITES;
-        if (tv && last != null && !Channels.isCaze(last)) resumeUrl = last.url; // CazéTV opens YouTube: not on its own
+        if (tv && last != null && !Channels.isCaze(last)) resumeUrl = Channels.key(last); // CazéTV opens YouTube: not on its own
         if (tv) {
             categories.requestFocus();
             categories.setSelection(start);
@@ -313,9 +313,9 @@ public class MainActivity extends Activity {
         category = which;
         showCategory();
         final int token = ++loadToken;
-        status.setText("Carregando " + Channels.CATEGORY_NAMES[which] + "…");
         all = new ArrayList<>();
         filter();
+        status.setText("Carregando " + Channels.CATEGORY_NAMES[which] + "…"); // after filter(), which writes the count
         new Thread(() -> {
             List<Channels.Channel> list;
             String error = null;
@@ -347,7 +347,7 @@ public class MainActivity extends Activity {
                     String url = resumeUrl;
                     resumeUrl = null;
                     for (int i = 0; i < shown.size(); i++)
-                        if (shown.get(i).url.equals(url)) {
+                        if (Channels.key(shown.get(i)).equals(url)) {
                             channels.requestFocus();
                             channels.setSelection(i);
                             play(i);
@@ -358,13 +358,17 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    // The channels shown: the category's, minus those off the air, matching the search.
+    // The channels shown: the category's, minus those off the air, matching the search. A channel
+    // that several lists carry shows once: its first version on the air (the list is ranked best
+    // quality first), so if that one goes down another takes its place.
     private void filter() {
         String q = Channels.fold(search.getText().toString().trim());
         List<Channels.Channel> out = new ArrayList<>();
+        java.util.Set<String> names = new java.util.HashSet<>();
         int down = 0;
         for (Channels.Channel c : all) {
             if (Health.isDown(this, c)) { down++; continue; }
+            if (category != Channels.FAVORITES && !names.add(Channels.baseName(c))) continue;
             if (q.isEmpty() || c.search.contains(q)) out.add(c);
         }
         shown = out;
@@ -378,10 +382,10 @@ public class MainActivity extends Activity {
     // channel you were on stays selected.
     private final Runnable hideDown = () -> {
         int pos = channels.getSelectedItemPosition();
-        String keep = pos >= 0 && pos < shown.size() ? shown.get(pos).url : null;
+        String keep = pos >= 0 && pos < shown.size() ? Channels.key(shown.get(pos)) : null;
         filter();
         if (keep != null) for (int i = 0; i < shown.size(); i++)
-            if (shown.get(i).url.equals(keep)) { channels.setSelection(i); break; }
+            if (Channels.key(shown.get(i)).equals(keep)) { channels.setSelection(i); break; }
     };
 
     private void checkHealth(List<Channels.Channel> list) {
@@ -469,7 +473,7 @@ public class MainActivity extends Activity {
             TextView t = v != null ? (TextView) v : row(28);
             Channels.Channel c = shown.get(p);
             String group = c.group == null ? "" : c.group.replace(";", " · ");
-            String name = (p + 1) + "   " + (category != Channels.FAVORITES && Channels.isFavorite(MainActivity.this, c.url)
+            String name = (p + 1) + "   " + (category != Channels.FAVORITES && Channels.isFavorite(MainActivity.this, c)
                     ? "★ " : "") + c.name;
             CazeLive cz = caze;
             if (Channels.isCaze(c) && cz != null && cz.today()) {

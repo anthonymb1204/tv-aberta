@@ -9,15 +9,17 @@
 
 ## O que faz
 
-- **Só canais grandes**, do mais famoso para o menos famoso:
-  - **Abertas nacionais:** SBT, Record, Band, RedeTV!, TV Cultura, TV Brasil, TV Gazeta.
-  - **Jornalismo:** CNN Brasil, Jovem Pan News, BandNews, Record News, SBT News.
-  - **Institucionais:** TV Câmara, TV Senado, TV Justiça.
-  - **Esportes oficiais gratuitos:** CazéTV, FIFA+, Red Bull TV, Pluto TV Esportes, NBA TV.
-  - **Infantil:** Nickelodeon, Bob Esponja, Turma da Mônica, Pluto TV Kids.
-  - **Filmes e entretenimento:** canais do Pluto TV Brasil e a MTV Brasil.
+- **Mais de 500 canais gratuitos em português** (o número muda conforme os canais que estão no ar), com os grandes primeiro:
+  - **Abertas nacionais:** SBT, Record, Band, RedeTV!, TV Cultura, TV Brasil, TV Gazeta, e a Globo pelo Globoplay.
+  - **Jornalismo:** CNN Brasil, Jovem Pan News, BandNews, Record News, SBT News, BM&C News, VEJA+.
+  - **TVs regionais, educativas, legislativas, religiosas e comunitárias** de todo o Brasil.
+  - **Pluto TV Brasil inteiro (185 canais):** filmes, séries, novelas, anime, Nickelodeon, MTV, reality, esportes, documentários.
+  - **Esportes oficiais gratuitos:** CazéTV, FIFA+, Red Bull TV, NBA TV, UFC, WWE.
+  - **Portugal:** RTP, SIC, TVI, Porto Canal, ARTV e outros canais portugueses com transmissão oficial gratuita.
+  - **Mundo:** canais estrangeiros gratuitos (Euronews, CGTN, NHK World, Das Erste, La 1, TV5 Monde...).
   - **Notícias internacionais:** BBC, CNN International, DW, France 24, Al Jazeera.
-- **Categorias:** ★ Favoritos, Brasil, Notícias, Esportes, Filmes, Entretenimento, Infantil e Todos.
+- **Categorias:** ★ Favoritos, Brasil, Notícias, Esportes, Filmes, Séries, Novelas, Infantil, Anime, Documentários, Entretenimento, Música, Portugal, Mundo e Todos.
+- **Sem repetidos:** quando várias listas trazem o mesmo canal, aparece uma vez só, na melhor qualidade que estiver no ar.
 - **★ Favoritos:** segure OK (ou aperte Menu) num canal.
 - **Volta no último canal** sozinho ao abrir. Voltar mostra a lista.
 - **Logos e números:** os canais têm logo e número. Digitar o número no controle pula para o canal, na lista e no player.
@@ -44,15 +46,19 @@ O mesmo APK funciona no celular Android: o app percebe sozinho se está numa TV 
 
 ## De onde vêm os canais
 
-- **Listas públicas:** as do [iptv-org](https://github.com/iptv-org/iptv), que só reúnem transmissões públicas. A categoria Brasil soma também a lista do [iptv-com](https://github.com/iptv-com/iptv), sem repetir canais.
+- **Listas públicas e gratuitas:**
+  - [iptv-org](https://github.com/iptv-org/iptv): todos os canais do Brasil e todos os canais em português, além dos grandes internacionais;
+  - [iptv-com](https://github.com/iptv-com/iptv) e [Free-TV](https://github.com/Free-TV/IPTV): mais canais abertos do Brasil e de Portugal;
+  - Pluto TV Brasil, direto do Pluto (`Pluto.java`): cada aparelho abre a própria sessão e lê a grade e as categorias do Pluto. A sessão é pedida no formato que o player do Android toca (áudio e vídeo juntos); os links do Pluto que as listas públicas trazem mandam áudio e vídeo separados e ficam com a tela preta, por isso são ignorados. Favoritos e o último canal são guardados pelo código fixo do canal, já que os links mudam todo dia;
+  - [M3UPT](https://github.com/LITUATUI/M3UPT): canais de TV de Portugal (só o grupo "TV", sem rádios e câmeras).
 - **Cache:** as listas ficam guardadas por **12 horas**. Sem internet, o app usa a última lista salva.
 - **Ficam de fora:**
   - canais marcados como **[Geo-blocked]**;
   - canais que usam **#KODIPROP** (DRM);
-  - **canais pagos brasileiros** que só aparecem como retransmissão não oficial (Globo, ESPN, SporTV, Telecine, Combate, GloboNews...).
+  - **canais pagos** (do Brasil e de Portugal) que só aparecem como retransmissão não oficial (Globo, ESPN, SporTV, Telecine, AXN, Sport TV...).
 - **Cabeçalhos:** o app envia o **Referer** e o **User-Agent** das linhas `#EXTVLCOPT` quando o canal pede.
 
-A ordem e o filtro de "famosos" estão em `Channels.java`, nas listas `FAME`, `FOREIGN` e `PAY_TV`.
+As fontes, as categorias, a ordem ("famosos" primeiro) e os filtros estão em `Channels.java`: `pool()`, `FAME`, `FOREIGN`, `PAY_TV` e `PAY_TV_PT`.
 
 ## Integração com a tela inicial
 
@@ -80,6 +86,7 @@ src/com/vizzion/tvaberta/
   MainActivity.java         categorias, lista, busca, favoritos, logos, números (TV e celular)
   PlayerActivity.java       player em tela cheia, troca de canal, retomada; controles de toque no celular
   Channels.java             download, cache, leitura do M3U, ranking e filtros
+  Pluto.java                Pluto TV Brasil direto do Pluto (sessão própria, grade e categorias)
   Health.java               testa os canais e lembra quais estão fora do ar
   Device.java               TV ou celular, e o tamanho das coisas em cada um
   CastClient.java           transmissão Google Cast (protocolo próprio, sem bibliotecas)

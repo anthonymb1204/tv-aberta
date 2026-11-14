@@ -33,31 +33,31 @@ final class Health {
 
     // Known to be off the air, recently enough to still believe it.
     static boolean isDown(Context c, Channels.Channel ch) {
-        long t = prefs(c).getLong(ch.url, 0);
+        long t = prefs(c).getLong(Channels.key(ch), 0);
         return t < 0 && System.currentTimeMillis() + t < DOWN_FOR;
     }
 
     private static boolean fresh(Context c, Channels.Channel ch) {
-        long t = prefs(c).getLong(ch.url, 0), age = System.currentTimeMillis() - Math.abs(t);
+        long t = prefs(c).getLong(Channels.key(ch), 0), age = System.currentTimeMillis() - Math.abs(t);
         return t != 0 && age < (t > 0 ? OK_FOR : DOWN_FOR);
     }
 
     static void mark(Context c, Channels.Channel ch, boolean ok) {
         long now = System.currentTimeMillis();
-        prefs(c).edit().putLong(ch.url, ok ? now : -now).apply();
+        prefs(c).edit().putLong(Channels.key(ch), ok ? now : -now).apply();
     }
 
     // Tests the channels whose answer is missing or old; tells the listener (on a background thread)
     // about each one as it's done.
     static void check(final Context c, List<Channels.Channel> list, final Listener l) {
         for (final Channels.Channel ch : list) {
-            if (!testable(ch) || fresh(c, ch) || !checking.add(ch.url)) continue;
+            if (!testable(ch) || fresh(c, ch) || !checking.add(Channels.key(ch))) continue;
             pool.execute(() -> {
                 boolean ok = Channels.responds(ch);
                 // One more try before calling it dead: a slow server or a hiccup on the Wi-Fi.
                 if (!ok) ok = Channels.responds(ch);
                 mark(c, ch, ok);
-                checking.remove(ch.url);
+                checking.remove(Channels.key(ch));
                 l.checked(ch, ok);
             });
         }

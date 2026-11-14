@@ -103,6 +103,8 @@ final class Channels {
         "^tv brasil( \\(|$)", "^tv gazeta( \\(|$)",
         // big news channels
         "^cnn brasil", "^jovem pan news", "^bandnews", "^record news", "^sbt news", "^pluto tv record news",
+        // institutional: Congress and the courts
+        "^tv camara (\\(brazil|2)", "^tv senado \\(brazil", "^tv justica",
         // sport, free and official
         "^caze", "^fifa\\+( \\(|$| portuguese)", "^red bull tv( \\(|$| br)", "^pluto tv esportes", "^ufc", "^wwe", "^nba( |$)",
         // kids

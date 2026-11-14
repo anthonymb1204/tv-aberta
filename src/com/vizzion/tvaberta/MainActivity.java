@@ -267,7 +267,7 @@ public class MainActivity extends Activity {
         newsButton.setText(s);
     }
 
-    // Asks GitHub (at most every 3 hours) whether there's a newer version; the first time a version
+    // Asks GitHub (at most every 30 minutes) whether there's a newer version; the first time a version
     // is found, the notice opens by itself.
     private void checkUpdate() {
         new Thread(() -> {
@@ -283,13 +283,16 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    // The update (if any) with what it brings, then what each version brought, newest first.
+    // The update (if any) with what it brings, then what each version brought, newest first. Opened
+    // by hand, it asks GitHub right away, so a version that just came out shows up.
     private void showNews(boolean auto) {
-        final Updater.Release r = update;
         new Thread(() -> {
+            final Updater.Release r = auto ? update : Updater.check(this, true);
             List<Updater.Notes> notes = Updater.notes(this, true);
             ui.post(() -> {
                 if (isFinishing()) return;
+                update = r;
+                showUpdateState();
                 String mine = Updater.current(this);
                 LinearLayout box = new LinearLayout(this);
                 box.setOrientation(LinearLayout.VERTICAL);

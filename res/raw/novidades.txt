@@ -2,6 +2,9 @@
 # o que vem na versão nova. Formato: o número da versão numa linha, as novidades embaixo (curtas),
 # uma linha em branco entre as versões. A mais nova primeiro.
 
+1.7.1
+Aviso de versão nova chega mais rápido; Novidades confere na hora
+
 1.7.0
 Aviso quando sai versão nova, com botão para atualizar direto no app
 Botão Novidades e relógio na tela de canais

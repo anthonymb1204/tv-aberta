@@ -24,7 +24,7 @@ final class Updater {
     private static final String LATEST = "https://api.github.com/repos/anthonymb1204/tv-aberta/releases/latest";
     private static final String NEWS = "https://raw.githubusercontent.com/anthonymb1204/tv-aberta/main/res/raw/novidades.txt";
     static final String ACTION_STATUS = "com.vizzion.tvaberta.INSTALL_STATUS";
-    private static final long CHECK_EVERY = 3 * 3600_000L;
+    private static final long CHECK_EVERY = 30 * 60_000L; // automatic checks; the Novidades button always asks now
 
     static final class Release {
         String version, apk;
@@ -54,7 +54,7 @@ final class Updater {
     }
 
     // The newer published version, or null when this one is the latest (or GitHub can't be reached).
-    // Asks GitHub at most every 3 hours unless forced; in between, answers from the last check.
+    // Asks GitHub at most every 30 minutes unless forced; in between, answers from the last check.
     static Release check(Context c, boolean force) {
         SharedPreferences p = prefs(c);
         if (force || System.currentTimeMillis() - p.getLong("at", 0) > CHECK_EVERY) {

@@ -28,7 +28,7 @@
 - **Busca** que ignora acentos: digitar uma letra no controle já leva à busca.
 - **Player nativo do Android** (VideoView), com ↑/↓ ou Canal +/- para trocar. Em chips MediaTek, o VLC fica sem som; o player nativo, não.
 - **Esconde os canais fora do ar.** Ao abrir uma categoria, o app testa os canais em segundo plano e tira da lista os que não respondem; o topo mostra quantos ("Brasil · 39 canais · 7 fora do ar"). Um canal no ar é testado de novo depois de 6 horas; um fora do ar, depois de 1 hora, já que muitos voltam.
-- **Atualiza sozinho:** ao abrir, o app vê se saiu versão nova no GitHub (no máximo a cada 3 horas). Se saiu, avisa e mostra o que mudou; **Atualizar agora** baixa e instala pelo instalador do Android (é só confirmar). O botão **Novidades**, no canto superior direito, mostra um resumo de cada versão, tirado de `res/raw/novidades.txt` (o app lê esse arquivo do GitHub para mostrar o que vem na versão nova).- **Relógio** com a hora e a data no topo da tela de canais.
+- **Atualiza sozinho:** ao abrir, o app vê se saiu versão nova no GitHub (no máximo a cada 30 minutos; tocar em Novidades confere na hora). Se saiu, avisa e mostra o que mudou; **Atualizar agora** baixa e instala pelo instalador do Android (é só confirmar). O botão **Novidades**, no canto superior direito, mostra um resumo de cada versão, tirado de `res/raw/novidades.txt` (o app lê esse arquivo do GitHub para mostrar o que vem na versão nova).- **Relógio** com a hora e a data no topo da tela de canais.
 - **Leve:** um APK de ~330 KB, sem bibliotecas, feito para TVs com 1 GB de RAM.
 
 | Logos e números | Favoritos |

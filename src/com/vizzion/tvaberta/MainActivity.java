@@ -102,6 +102,26 @@ public class MainActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(installStatus, f, android.content.Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(installStatus, f);
         checkUpdate();
+        UpdateJob.schedule(this); // the background check that puts new versions in the notification bar
+        askToNotify();
+        if (getIntent().getBooleanExtra(UpdateJob.EXTRA_SHOW_UPDATE, false)) showNews(false);
+    }
+
+    // Tapping the "new version" notification while the app is already open.
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent.getBooleanExtra(UpdateJob.EXTRA_SHOW_UPDATE, false)) showNews(false);
+    }
+
+    // Android 13+ asks before an app may notify: asked once, the first time the app opens.
+    private void askToNotify() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        android.content.SharedPreferences p = getSharedPreferences("update", 0);
+        if (p.getBoolean("askedNotify", false)) return;
+        p.edit().putBoolean("askedNotify", true).apply();
+        requestPermissions(new String[] {"android.permission.POST_NOTIFICATIONS"}, 7);
     }
 
     // The TV: categories on the left, status, search and channels on the right.
@@ -277,6 +297,7 @@ public class MainActivity extends Activity {
                 showUpdateState();
                 if (r != null && !Updater.noticeShown(this, r.version) && !isFinishing()) {
                     Updater.markNoticeShown(this, r.version);
+                    Updater.markNotified(this, r.version); // seen in the app: no notification needed for it
                     showNews(true);
                 }
             });

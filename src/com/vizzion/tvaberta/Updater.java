@@ -97,6 +97,15 @@ final class Updater {
         prefs(c).edit().putString("noticed", version).apply();
     }
 
+    // The notification in the notification bar also goes out once per version.
+    static boolean notified(Context c, String version) {
+        return version.equals(prefs(c).getString("notified", null));
+    }
+
+    static void markNotified(Context c, String version) {
+        prefs(c).edit().putString("notified", version).apply();
+    }
+
     // ---- What's new: version blocks, newest first ----
     // novidades.txt: a version number on its own line, its short notes under it, a blank line between.
 

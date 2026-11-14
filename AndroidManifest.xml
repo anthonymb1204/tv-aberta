@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.vizzion.tvaberta" android:versionCode="17" android:versionName="1.7.2">
+    package="com.vizzion.tvaberta" android:versionCode="18" android:versionName="1.7.3">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Updates from inside the app: Android still asks the person to confirm each one. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- "Nova versão disponível" in the notification bar, from a check every 6 hours (also after a restart). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- CazéTV opens its official live in the YouTube app (TV or phone). One APK for TV and phone:
          each screen picks its orientation in code (TV landscape; phone list upright, player sideways). -->
     <queries><package android:name="com.google.android.youtube.tv" /><package android:name="com.google.android.youtube" /><package android:name="com.globo.globotv" /></queries>
@@ -24,6 +27,8 @@
         </activity>
         <provider android:name=".LastChannelProvider" android:authorities="com.vizzion.tvaberta.last"
             android:exported="true" />
+        <service android:name=".UpdateJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <activity android:name=".YouTubePlayerActivity" android:exported="false"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" />
         <activity android:name=".PlayerActivity" android:exported="false"

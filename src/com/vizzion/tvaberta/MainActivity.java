@@ -34,6 +34,8 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private float scale = 1f;
+    private boolean tv = true; // false on a phone: portrait, touch layout
+    private LinearLayout chips; // the phone's category chips
     private ListView categories, channels;
     private EditText search;
     private TextView status;
@@ -65,10 +67,40 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        scale = getResources().getDisplayMetrics().widthPixels / 1920f;
+        tv = Device.isTv(this);
+        scale = Device.scale(this, tv);
         getWindow().setBackgroundDrawable(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[] {0xFF101722, 0xFF07090D}));
+        if (tv) {
+            setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        } else {
+            // Phone: upright, with the status bar, and the list shrinks above the keyboard.
+            setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().setStatusBarColor(0xFF101722);
+            getWindow().setNavigationBarColor(0xFF07090D);
+            getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN);
+        }
 
+        buildShared();
+        setContentView(tv ? buildTv() : buildPhone());
+
+        // Start on the channel watched last (Back then shows its list), else on the favourites if
+        // there are any, else on Brasil. On a phone the list just opens there: nothing plays by itself.
+        Channels.Channel last = state == null ? Channels.last(this) : null;
+        int start = last != null ? Channels.lastCategory(this)
+                : Channels.favorites(this).isEmpty() ? 1 : Channels.FAVORITES;
+        if (tv && last != null && !Channels.isCaze(last)) resumeUrl = last.url; // CazéTV opens YouTube: not on its own
+        if (tv) {
+            categories.requestFocus();
+            categories.setSelection(start);
+        }
+        loadCategory(start);
+    }
+
+    // The TV: categories on the left, status, search and channels on the right.
+    private View buildTv() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setPadding(px(64), px(56), px(64), px(40));
@@ -76,15 +108,7 @@ public class MainActivity extends Activity {
         // Left: title and categories.
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
-        // The logo (res/drawable/banner.png), rounded, in place of a text title.
-        android.widget.ImageView logo = new android.widget.ImageView(this);
-        logo.setImageResource(getResources().getIdentifier("banner", "drawable", getPackageName()));
-        logo.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-        logo.setClipToOutline(true);
-        GradientDrawable round = new GradientDrawable();
-        round.setCornerRadius(px(22));
-        logo.setBackground(round);
-        left.addView(logo, new LinearLayout.LayoutParams(px(400), px(225)));
+        left.addView(logo(), new LinearLayout.LayoutParams(px(400), px(225)));
         TextView sub = text(22, 0x99FFFFFF);
         sub.setText("Canais gratuitos · iptv-org");
         sub.setPadding(px(6), px(12), 0, 0);
@@ -109,8 +133,124 @@ public class MainActivity extends Activity {
         // Right: status, search and channels.
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
-        status = text(26, 0xB3FFFFFF);
         right.addView(status);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+        slp.topMargin = px(16);
+        right.addView(search, slp);
+        LinearLayout.LayoutParams chlp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        chlp.topMargin = px(16);
+        right.addView(channels, chlp);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, -1, 1f);
+        rlp.leftMargin = px(48);
+        root.addView(right, rlp);
+
+        // Moving through the categories loads each one after a short pause; OK loads it at once.
+        categories.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                ui.removeCallbacks(pendingLoad);
+                pendingCategory = pos;
+                ui.postDelayed(pendingLoad, 450);
+            }
+            @Override public void onNothingSelected(AdapterView<?> p) {}
+        });
+        categories.setOnItemClickListener((p, v, pos, id) -> {
+            ui.removeCallbacks(pendingLoad);
+            loadCategory(pos);
+            if (!shown.isEmpty()) channels.requestFocus();
+        });
+        return root;
+    }
+
+    // The phone: logo and title, search, a row of category chips that scrolls sideways, then the
+    // channels. Tap a channel to watch it, touch and hold to favourite it.
+    private View buildPhone() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(px(36), px(28), px(36), 0);
+
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(logo(), new LinearLayout.LayoutParams(px(176), px(99)));
+        LinearLayout titles = new LinearLayout(this);
+        titles.setOrientation(LinearLayout.VERTICAL);
+        TextView name = text(40, Color.WHITE);
+        name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        name.setText("TV Aberta");
+        titles.addView(name);
+        TextView sub = text(24, 0x99FFFFFF);
+        sub.setText("Canais abertos e gratuitos");
+        titles.addView(sub);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
+        tl.leftMargin = px(28);
+        head.addView(titles, tl);
+        root.addView(head);
+
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+        slp.topMargin = px(32);
+        root.addView(search, slp);
+
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        chips = new LinearLayout(this);
+        chips.setPadding(0, px(24), 0, px(16));
+        for (int i = 0; i < Channels.CATEGORY_NAMES.length; i++) {
+            final int which = i;
+            TextView c = text(26, 0xE6FFFFFF);
+            c.setText(Channels.CATEGORY_NAMES[i]);
+            c.setPadding(px(30), px(16), px(30), px(16));
+            c.setOnClickListener(v -> {
+                loadCategory(which);
+                hideKeyboard();
+            });
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
+            cl.rightMargin = px(14);
+            chips.addView(c, cl);
+        }
+        scroll.addView(chips);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+
+        status.setPadding(px(8), 0, 0, px(8));
+        root.addView(status);
+        root.addView(channels, new LinearLayout.LayoutParams(-1, 0, 1f));
+        return root;
+    }
+
+    // Colours the chosen category: in the TV's list, or the phone's chip (filled) and the others.
+    private void showCategory() {
+        if (categories != null) ((BaseAdapter) categories.getAdapter()).notifyDataSetChanged();
+        if (chips == null) return;
+        for (int i = 0; i < chips.getChildCount(); i++) {
+            TextView c = (TextView) chips.getChildAt(i);
+            boolean on = i == category;
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(px(40));
+            bg.setColor(on ? 0xFF7FC8FF : 0x1AFFFFFF);
+            c.setBackground(bg);
+            c.setTextColor(on ? 0xFF07090D : 0xE6FFFFFF);
+            if (on) {
+                final View chip = c;
+                chips.post(() -> ((android.widget.HorizontalScrollView) chips.getParent())
+                        .smoothScrollTo(Math.max(0, chip.getLeft() - px(36)), 0));
+            }
+        }
+    }
+
+    // The logo (res/drawable/banner.png), rounded, in place of a text title.
+    private View logo() {
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(getResources().getIdentifier("banner", "drawable", getPackageName()));
+        logo.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        logo.setClipToOutline(true);
+        GradientDrawable round = new GradientDrawable();
+        round.setCornerRadius(px(tv ? 22 : 16));
+        logo.setBackground(round);
+        return logo;
+    }
+
+    // Status line, search box and channel list: the same on both, placed by buildTv or buildPhone.
+    private void buildShared() {
+        status = text(26, 0xB3FFFFFF);
         search = new EditText(this);
         search.setSingleLine(true);
         search.setHint("Buscar canal…");
@@ -130,9 +270,10 @@ public class MainActivity extends Activity {
             if (!shown.isEmpty()) channels.requestFocus();
             return true;
         });
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
-        slp.topMargin = px(16);
-        right.addView(search, slp);
+        if (!tv) {
+            search.setHint("Buscar canal");
+            search.setBackground(selector(0x1AFFFFFF, 0x2EFFFFFF));
+        }
         channels = list();
         adapter = new ChannelAdapter();
         channels.setAdapter(adapter);
@@ -144,38 +285,13 @@ public class MainActivity extends Activity {
             if (ev.getAction() == KeyEvent.ACTION_UP) toggleFavorite(channels.getSelectedItemPosition());
             return true;
         });
-        LinearLayout.LayoutParams chlp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        chlp.topMargin = px(16);
-        right.addView(channels, chlp);
-        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, -1, 1f);
-        rlp.leftMargin = px(48);
-        root.addView(right, rlp);
-
-        setContentView(root);
-
-        // Moving through the categories loads each one after a short pause; OK loads it at once.
-        categories.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
-                ui.removeCallbacks(pendingLoad);
-                pendingCategory = pos;
-                ui.postDelayed(pendingLoad, 450);
+        // Dragging the list on a phone puts the keyboard away.
+        if (!tv) channels.setOnScrollListener(new android.widget.AbsListView.OnScrollListener() {
+            @Override public void onScrollStateChanged(android.widget.AbsListView v, int s) {
+                if (s == SCROLL_STATE_TOUCH_SCROLL) hideKeyboard();
             }
-            @Override public void onNothingSelected(AdapterView<?> p) {}
+            @Override public void onScroll(android.widget.AbsListView v, int a, int b, int c) {}
         });
-        categories.setOnItemClickListener((p, v, pos, id) -> {
-            ui.removeCallbacks(pendingLoad);
-            loadCategory(pos);
-            if (!shown.isEmpty()) channels.requestFocus();
-        });
-        // Start on the channel watched last (Back then shows its list), else on the favourites if
-        // there are any, else on Brasil.
-        Channels.Channel last = state == null ? Channels.last(this) : null;
-        int start = last != null ? Channels.lastCategory(this)
-                : Channels.favorites(this).isEmpty() ? 1 : Channels.FAVORITES;
-        if (last != null && !Channels.isCaze(last)) resumeUrl = last.url; // CazéTV opens YouTube: not on its own
-        categories.requestFocus();
-        categories.setSelection(start);
-        loadCategory(start);
     }
 
     private void toggleFavorite(int pos) {
@@ -195,7 +311,7 @@ public class MainActivity extends Activity {
     private void loadCategory(final int which) {
         if (which == category) return;
         category = which;
-        ((BaseAdapter) categories.getAdapter()).notifyDataSetChanged();
+        showCategory();
         final int token = ++loadToken;
         status.setText("Carregando " + Channels.CATEGORY_NAMES[which] + "…");
         all = new ArrayList<>();
@@ -224,7 +340,8 @@ public class MainActivity extends Activity {
                 filter();
                 if (err != null) status.setText("Sem conexão com a lista (" + err + ")");
                 else if (which == Channels.FAVORITES && result.isEmpty())
-                    status.setText("Nenhum favorito ainda: segure OK num canal para favoritar");
+                    status.setText(tv ? "Nenhum favorito ainda: segure OK num canal para favoritar"
+                            : "Nenhum favorito ainda: toque e segure um canal para favoritar");
                 if (resumeUrl != null) {
                     String url = resumeUrl;
                     resumeUrl = null;
@@ -257,7 +374,8 @@ public class MainActivity extends Activity {
             Intent g = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Channels.GLOBOPLAY)).setPackage("com.globo.globotv");
             try { startActivity(g); }
             catch (Exception e) {
-                Intent app = getPackageManager().getLeanbackLaunchIntentForPackage("com.globo.globotv");
+                Intent app = tv ? getPackageManager().getLeanbackLaunchIntentForPackage("com.globo.globotv") : null;
+                if (app == null) app = getPackageManager().getLaunchIntentForPackage("com.globo.globotv");
                 if (app != null) startActivity(app);
                 else Toast.makeText(this, "Instale o Globoplay para ver a Globo ao vivo.", Toast.LENGTH_LONG).show();
             }
@@ -408,7 +526,7 @@ public class MainActivity extends Activity {
         t.setSingleLine(true);
         t.setEllipsize(android.text.TextUtils.TruncateAt.END);
         t.setGravity(Gravity.CENTER_VERTICAL);
-        t.setMinHeight(px(size * 2 + 14));
+        t.setMinHeight(px(size * 2 + (tv ? 14 : 44))); // a phone row is a comfortable finger's height
         t.setPadding(px(22), 0, px(22), 0);
         return t;
     }

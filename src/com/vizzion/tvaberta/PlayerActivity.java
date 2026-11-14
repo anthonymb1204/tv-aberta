@@ -53,6 +53,9 @@ public class PlayerActivity extends Activity {
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         blp.leftMargin = blp.topMargin = Math.round(56 * scale);
         root.addView(banner, blp);
+        tv = Device.isTv(this);
+        if (tv) setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        else buildTouch(root);
         setContentView(root);
 
         video.setOnPreparedListener(mp -> {
@@ -75,6 +78,106 @@ public class PlayerActivity extends Activity {
         return Channels.playing.get(index);
     }
 
+    // ---- Phone: tap for controls, swipe up/down to change channel -------------------------------
+
+    private boolean tv = true;
+    private View controls;
+    private final Runnable hideControls = () -> {
+        if (controls != null) controls.animate().alpha(0f).setDuration(300)
+                .withEndAction(() -> controls.setVisibility(View.GONE)).start();
+    };
+
+    private void buildTouch(FrameLayout root) {
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        immersive();
+        float d = getResources().getDisplayMetrics().density;
+        FrameLayout layer = new FrameLayout(this);
+        layer.setBackgroundColor(0x59000000);
+        // Back, top left; the channel's name sits beside it.
+        TextView back = touchButton("←", d);
+        back.setOnClickListener(v -> finish());
+        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(Math.round(52 * d), Math.round(52 * d), Gravity.TOP | Gravity.START);
+        bl.leftMargin = bl.topMargin = Math.round(16 * d);
+        layer.addView(back, bl);
+        // Previous / next, at the bottom centre.
+        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+        row.setGravity(Gravity.CENTER);
+        TextView prev = touchButton("‹  Anterior", d);
+        prev.setOnClickListener(v -> { zap(-1); keepControls(); });
+        TextView next = touchButton("Próximo  ›", d);
+        next.setOnClickListener(v -> { zap(1); keepControls(); });
+        for (TextView t : new TextView[] {prev, next}) {
+            t.setPadding(Math.round(26 * d), 0, Math.round(26 * d), 0);
+            android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(-2, Math.round(52 * d));
+            lp.leftMargin = lp.rightMargin = Math.round(10 * d);
+            row.addView(t, lp);
+        }
+        FrameLayout.LayoutParams rl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        rl.bottomMargin = Math.round(24 * d);
+        layer.addView(row, rl);
+        layer.setVisibility(View.GONE);
+        root.addView(layer, new FrameLayout.LayoutParams(-1, -1));
+        controls = layer;
+        // The channel's name moves right of the back button.
+        FrameLayout.LayoutParams blp = (FrameLayout.LayoutParams) banner.getLayoutParams();
+        blp.leftMargin = Math.round(80 * d);
+        blp.topMargin = Math.round(18 * d);
+        banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+
+        final android.view.GestureDetector g = new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override public boolean onDown(android.view.MotionEvent e) { return true; }
+                    @Override public boolean onSingleTapUp(android.view.MotionEvent e) {
+                        if (controls.getVisibility() == View.VISIBLE) hideControls.run(); else keepControls();
+                        return true;
+                    }
+                    @Override public boolean onFling(android.view.MotionEvent a, android.view.MotionEvent b, float vx, float vy) {
+                        if (a == null || Math.abs(vy) < 800 || Math.abs(b.getY() - a.getY()) < Math.abs(b.getX() - a.getX())) return false;
+                        zap(vy < 0 ? 1 : -1); // swipe up: next channel
+                        return true;
+                    }
+                });
+        root.setOnTouchListener((v, e) -> g.onTouchEvent(e));
+    }
+
+    private void keepControls() {
+        ui.removeCallbacks(hideControls);
+        controls.animate().cancel();
+        controls.setAlpha(1f);
+        controls.setVisibility(View.VISIBLE);
+        show((index + 1) + "/" + Channels.playing.size() + "  " + current().name, 4000);
+        ui.postDelayed(hideControls, 4000);
+    }
+
+    private TextView touchButton(String label, float d) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x99000000);
+        bg.setStroke(Math.round(d), 0x40FFFFFF);
+        bg.setCornerRadius(26 * d);
+        t.setBackground(bg);
+        return t;
+    }
+
+    // Phone: hide the status and navigation bars; a swipe from the edge brings them back for a moment.
+    @SuppressWarnings("deprecation")
+    private void immersive() {
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean has) {
+        super.onWindowFocusChanged(has);
+        if (has && !tv) immersive();
+    }
+
     private void start() {
         Channels.Channel ch = current();
         Channels.saveLast(this, ch, getIntent().getIntExtra("category", 1));
@@ -88,7 +191,8 @@ public class PlayerActivity extends Activity {
 
     private void fail(String why) {
         ui.removeCallbacks(stalled);
-        show(current().name + " indisponível (" + why + ")\n↑ ↓ para trocar de canal", 0);
+        show(current().name + " indisponível (" + why + ")\n"
+                + (tv ? "↑ ↓ para trocar de canal" : "Deslize ou toque para trocar de canal"), 0);
     }
 
     private void show(String text, int hideAfterMs) {

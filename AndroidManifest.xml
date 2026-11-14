@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.vizzion.tvaberta" android:versionCode="6" android:versionName="1.4">
+    package="com.vizzion.tvaberta" android:versionCode="7" android:versionName="1.5.0">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- CazéTV opens its official live in the YouTube app. -->
-    <queries><package android:name="com.google.android.youtube.tv" /><package android:name="com.globo.globotv" /></queries>
+    <!-- CazéTV opens its official live in the YouTube app (TV or phone). One APK for TV and phone:
+         each screen picks its orientation in code (TV landscape; phone list upright, player sideways). -->
+    <queries><package android:name="com.google.android.youtube.tv" /><package android:name="com.google.android.youtube" /><package android:name="com.globo.globotv" /></queries>
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application android:label="TV Aberta" android:icon="@drawable/icon" android:banner="@drawable/banner"
         android:allowBackup="false" android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <activity android:name=".MainActivity" android:exported="true"
-            android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode"
             android:windowSoftInputMode="adjustNothing|stateHidden">
             <intent-filter>
@@ -23,7 +23,6 @@
         <provider android:name=".LastChannelProvider" android:authorities="com.vizzion.tvaberta.last"
             android:exported="true" />
         <activity android:name=".PlayerActivity" android:exported="false"
-            android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" />
     </application>
 </manifest>

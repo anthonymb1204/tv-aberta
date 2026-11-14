@@ -1,7 +1,9 @@
 <p align="center"><img src="docs/arte/Desenho sem contorno.png" width="160" alt="TV Aberta"></p>
 
 <h1 align="center">TV Aberta</h1>
-<p align="center"><b>Sua TV, de graça!</b> Canais abertos e gratuitos para Android TV, leve e feito para o controle remoto.</p>
+<p align="center"><b>Sua TV, de graça!</b> Canais abertos e gratuitos para Android TV e celular Android, leve e feito para o controle remoto e para o toque.</p>
+
+<p align="center"><a href="https://github.com/anthonymb1204/tv-aberta/releases/latest"><b>⬇ Baixar a versão mais nova (APK)</b></a></p>
 
 ![Lista de canais](docs/depois_tvaberta_so_famosos.png)
 
@@ -21,12 +23,24 @@
 - **Logos e números:** os canais têm logo e número. Digitar o número no controle pula para o canal, na lista e no player.
 - **Busca** que ignora acentos: digitar uma letra no controle já leva à busca.
 - **Player nativo do Android** (VideoView), com ↑/↓ ou Canal +/- para trocar. Em chips MediaTek, o VLC fica sem som; o player nativo, não.
-- **Testa o canal antes de abrir.** Se ele não responder, o app avisa em vez de travar numa tela preta.
-- **Leve:** um APK de ~300 KB, sem bibliotecas, feito para TVs com 1 GB de RAM.
+- **Esconde os canais fora do ar.** Ao abrir uma categoria, o app testa os canais em segundo plano e tira da lista os que não respondem; o topo mostra quantos ("Brasil · 39 canais · 7 fora do ar"). Um canal no ar é testado de novo depois de 6 horas; um fora do ar, depois de 1 hora, já que muitos voltam.
+- **Leve:** um APK de ~330 KB, sem bibliotecas, feito para TVs com 1 GB de RAM.
 
 | Logos e números | Favoritos |
 |---|---|
 | ![Logos](docs/depois_tvaberta_logos.png) | ![Favoritos](docs/depois_tvaberta_favoritos.png) |
+
+## No celular
+
+O mesmo APK funciona no celular Android: o app percebe sozinho se está numa TV ou num celular.
+
+- **Lista em pé:** busca, categorias em botões que rolam para o lado e a lista de canais. Toque para assistir; toque e segure para favoritar.
+- **Player deitado, em tela cheia.** Um toque mostra os controles, que somem sozinhos:
+  - em cima, ‹ voltar, o nome do canal com **● AO VIVO** e o botão de transmitir;
+  - **brilho** à esquerda e **volume** à direita (arraste na barra);
+  - no meio, ⏮ ⏸ ⏭ (canal anterior, pausa, próximo canal); deslizar para cima ou para baixo também troca de canal;
+  - embaixo, **Bloquear**: trava a tela para as crianças (sem controles, sem trocar de canal, Voltar e teclas de volume bloqueados). Para destravar, toque na tela e segure o cadeado por 1 segundo.
+- **Transmitir para a TV (Google Cast):** o botão de transmitir lista as TVs com Chromecast da rede e abre o canal nelas; os botões do celular passam a controlar a TV. O app fala o protocolo do Cast direto (`CastClient.java`), sem as bibliotecas do Google. Canais em H.265 ou cujo servidor bloqueia acesso de outros sites (CORS) não podem ser transmitidos; para TVs sem Chromecast há o **Espelhar tela** do próprio celular.
 
 ## De onde vêm os canais
 
@@ -63,12 +77,17 @@ adb install -r out/tvaberta.apk
 
 ```
 src/com/vizzion/tvaberta/
-  MainActivity.java         categorias, lista, busca, favoritos, logos, números
-  PlayerActivity.java       player em tela cheia, troca de canal, retomada
+  MainActivity.java         categorias, lista, busca, favoritos, logos, números (TV e celular)
+  PlayerActivity.java       player em tela cheia, troca de canal, retomada; controles de toque no celular
   Channels.java             download, cache, leitura do M3U, ranking e filtros
+  Health.java               testa os canais e lembra quais estão fora do ar
+  Device.java               TV ou celular, e o tamanho das coisas em cada um
+  CastClient.java           transmissão Google Cast (protocolo próprio, sem bibliotecas)
+  CastFinder.java           encontra as TVs com Chromecast na rede (mDNS)
+  Icon.java, VSlider.java   ícones e barras de brilho/volume do player do celular
   LastChannelProvider.java  último canal para a tela inicial
 res/drawable/               ícone e banner
 docs/                       prints e arte original do logo
 ```
 
-Requer Android 5.0 ou mais novo (testado numa F VIZZION TV com Android 14).
+Requer Android 5.0 ou mais novo (testado numa F VIZZION TV com Android 14 e em celular Android).

@@ -587,6 +587,7 @@ public class PlayerActivity extends Activity {
     private void fail(String why) {
         ui.removeCallbacks(stalled);
         if (cast != null) return; // the phone isn't playing it: the TV is
+        if (Health.testable(current())) Health.mark(this, current(), false); // hidden from the list for a while
         show(current().name + " indisponível (" + why + ")\n"
                 + (tv ? "↑ ↓ para trocar de canal" : "Deslize ou toque para trocar de canal"), 0);
     }

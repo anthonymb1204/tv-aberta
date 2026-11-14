@@ -338,6 +338,7 @@ public class MainActivity extends Activity {
                 if (token != loadToken) return; // another category was picked meanwhile
                 all = result;
                 filter();
+                checkHealth(result);
                 if (err != null) status.setText("Sem conexão com a lista (" + err + ")");
                 else if (which == Channels.FAVORITES && result.isEmpty())
                     status.setText(tv ? "Nenhum favorito ainda: segure OK num canal para favoritar"
@@ -357,14 +358,38 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    // The channels shown: the category's, minus those off the air, matching the search.
     private void filter() {
         String q = Channels.fold(search.getText().toString().trim());
         List<Channels.Channel> out = new ArrayList<>();
-        for (Channels.Channel c : all) if (q.isEmpty() || c.search.contains(q)) out.add(c);
+        int down = 0;
+        for (Channels.Channel c : all) {
+            if (Health.isDown(this, c)) { down++; continue; }
+            if (q.isEmpty() || c.search.contains(q)) out.add(c);
+        }
         shown = out;
         adapter.notifyDataSetChanged();
         if (category >= 0) status.setText(Channels.CATEGORY_NAMES[category] + " · " + out.size() + " canais"
-                + (q.isEmpty() ? "" : " para \"" + search.getText() + "\""));
+                + (q.isEmpty() ? "" : " para \"" + search.getText() + "\"")
+                + (down == 0 ? "" : " · " + down + " fora do ar"));
+    }
+
+    // Channels found off the air disappear in batches (not one row at a time while you look), and the
+    // channel you were on stays selected.
+    private final Runnable hideDown = () -> {
+        int pos = channels.getSelectedItemPosition();
+        String keep = pos >= 0 && pos < shown.size() ? shown.get(pos).url : null;
+        filter();
+        if (keep != null) for (int i = 0; i < shown.size(); i++)
+            if (shown.get(i).url.equals(keep)) { channels.setSelection(i); break; }
+    };
+
+    private void checkHealth(List<Channels.Channel> list) {
+        Health.check(this, list, (ch, ok) -> {
+            if (ok) return;
+            ui.removeCallbacks(hideDown);
+            ui.postDelayed(hideDown, 1500);
+        });
     }
 
     private void play(final int pos) {
@@ -396,9 +421,12 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "Testando " + ch.name + "…", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             boolean ok = Channels.responds(ch);
+            if (Health.testable(ch)) Health.mark(this, ch, ok);
             ui.post(() -> {
                 if (!ok) {
-                    Toast.makeText(this, ch.name + " não respondeu. Tente outro canal.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, ch.name + " está fora do ar agora e saiu da lista.", Toast.LENGTH_LONG).show();
+                    ui.removeCallbacks(hideDown);
+                    ui.post(hideDown);
                     return;
                 }
                 Channels.playing = list;

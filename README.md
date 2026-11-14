@@ -61,6 +61,15 @@ O mesmo APK funciona no celular Android: o app percebe sozinho se está numa TV 
 
 As fontes, as categorias, a ordem ("famosos" primeiro) e os filtros estão em `Channels.java`: `pool()`, `FAME`, `FOREIGN`, `PAY_TV` e `PAY_TV_PT`.
 
+### Adicionar canais à mão
+
+Na parte "CANAIS ADICIONADOS À MÃO" do `Channels.java` há duas listas para editar, explicadas em português no próprio arquivo:
+
+- **`YOUTUBE`**: canais que transmitem ao vivo no YouTube, uma linha por canal: `{"Nome no app", "@ do canal sem o @", "Categoria", "código da foto"}`.
+- **`MANUAIS`**: links diretos de transmissão (`.m3u8`): `{"Nome no app", "link", "Categoria", "link do logo"}`.
+
+A categoria é o nome de uma das categorias do app (Brasil, Notícias, Esportes, Filmes, Séries, Novelas, Infantil, Anime, Documentários, Entretenimento, Música, Portugal ou Mundo). Depois é só rodar `./build.sh` e instalar o `out/tvaberta.apk`. Só canais gratuitos e oficiais.
+
 ## Integração com a tela inicial
 
 O app informa o **último canal assistido** em `content://com.vizzion.tvaberta.last/channel` (só o nome, somente leitura). A tela inicial do projeto [tv-vizzion](https://github.com/anthonymb1204/tv-vizzion) usa isso no botão **▶ Continuar**.

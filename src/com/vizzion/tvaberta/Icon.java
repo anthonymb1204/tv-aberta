@@ -11,7 +11,8 @@ import android.graphics.drawable.Drawable;
 // White line icons for the phone player, drawn on a 100x100 grid (no image files): sun (brightness),
 // speaker (volume), and a padlock open or closed.
 final class Icon extends Drawable {
-    static final int SUN = 0, SPEAKER = 1, LOCK_OPEN = 2, LOCK_CLOSED = 3;
+    static final int SUN = 0, SPEAKER = 1, LOCK_OPEN = 2, LOCK_CLOSED = 3, BACK = 4, CAST = 5, CAST_ON = 6,
+            PLAY = 7, PAUSE = 8, PREV = 9, NEXT = 10;
 
     private final int type;
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -36,6 +37,57 @@ final class Icon extends Drawable {
         c.save();
         c.translate(getBounds().exactCenterX() - 50 * s, getBounds().exactCenterY() - 50 * s);
         switch (type) {
+            case BACK: // "<"
+                path.reset();
+                path.moveTo(62 * s, 16 * s);
+                path.lineTo(28 * s, 50 * s);
+                path.lineTo(62 * s, 84 * s);
+                c.drawPath(path, line);
+                break;
+            case CAST:
+            case CAST_ON: // the screen with the waves in its bottom-left corner
+                path.reset();
+                path.moveTo(10 * s, 36 * s);
+                path.lineTo(10 * s, 20 * s);
+                path.lineTo(90 * s, 20 * s);
+                path.lineTo(90 * s, 80 * s);
+                path.lineTo(54 * s, 80 * s);
+                c.drawPath(path, line);
+                for (int i = 0; i < 2; i++) {
+                    float rad = (22 + i * 18) * s;
+                    r.set(10 * s - rad, 80 * s - rad, 10 * s + rad, 80 * s + rad);
+                    c.drawArc(r, -90, 90, false, line);
+                }
+                c.drawCircle(13 * s, 77 * s, 7 * s, fill);
+                if (type == CAST_ON) c.drawRect(24 * s, 32 * s, 78 * s, 68 * s, fill);
+                break;
+            case PLAY:
+                path.reset();
+                path.moveTo(28 * s, 14 * s);
+                path.lineTo(84 * s, 50 * s);
+                path.lineTo(28 * s, 86 * s);
+                path.close();
+                c.drawPath(path, fill);
+                break;
+            case PAUSE:
+                c.drawRoundRect(new RectF(24 * s, 14 * s, 42 * s, 86 * s), 4 * s, 4 * s, fill);
+                c.drawRoundRect(new RectF(58 * s, 14 * s, 76 * s, 86 * s), 4 * s, 4 * s, fill);
+                break;
+            case PREV:
+            case NEXT: { // a bar and a triangle: previous / next channel
+                boolean next = type == NEXT;
+                c.save();
+                if (next) c.scale(-1, 1, 50 * s, 50 * s);
+                c.drawRoundRect(new RectF(16 * s, 18 * s, 28 * s, 82 * s), 4 * s, 4 * s, fill);
+                path.reset();
+                path.moveTo(84 * s, 18 * s);
+                path.lineTo(34 * s, 50 * s);
+                path.lineTo(84 * s, 82 * s);
+                path.close();
+                c.drawPath(path, fill);
+                c.restore();
+                break;
+            }
             case SUN:
                 c.drawCircle(50 * s, 50 * s, 17 * s, line);
                 for (int i = 0; i < 8; i++) {

@@ -1,9 +1,10 @@
 package com.vizzion.tvaberta;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,14 +12,25 @@ import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.VideoView;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 // Full screen with Android's own player (VideoView): on this TV's chip VLC plays with no sound.
-// Up/down (or Channel +/-) change channel; Back goes back to the list.
+// TV: up/down (or Channel +/-) change channel; Back goes back to the list.
+// Phone: a tap shows the controls (back, channel name, cast; brightness left, volume right;
+// previous / pause / next; lock), a swipe up or down changes channel.
 public class PlayerActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -78,57 +90,132 @@ public class PlayerActivity extends Activity {
         return Channels.playing.get(index);
     }
 
-    // ---- Phone: tap for controls, swipe up/down to change channel -------------------------------
+    // ---- Phone controls ------------------------------------------------------------------------
 
     private boolean tv = true;
-    private View controls;
+    private float d = 1f; // density
+    private View controls, lockHint, castCard;
+    private TextView title, castText;
+    private ImageView playIcon, castIcon;
+    private VSlider brightness, volume;
+    private boolean locked, paused;
+    private long pausedAt;
     private final Runnable hideControls = () -> {
         if (controls != null) controls.animate().alpha(0f).setDuration(300)
                 .withEndAction(() -> controls.setVisibility(View.GONE)).start();
     };
+    private final Runnable hideLockHint = () -> {
+        if (lockHint != null) lockHint.animate().alpha(0f).setDuration(300)
+                .withEndAction(() -> lockHint.setVisibility(View.GONE)).start();
+    };
+    private final Runnable unlock = () -> setLocked(false);
+
+    private int dp(float v) { return Math.round(v * d); }
 
     private void buildTouch(FrameLayout root) {
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         immersive();
-        float d = getResources().getDisplayMetrics().density;
+        d = getResources().getDisplayMetrics().density;
+
+        // While casting, the phone shows where the channel is playing instead of the video.
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        ImageView ci = new ImageView(this);
+        ci.setImageDrawable(new Icon(Icon.CAST_ON));
+        ci.setAlpha(0.85f);
+        card.addView(ci, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        castText = new TextView(this);
+        castText.setTextColor(0xCCFFFFFF);
+        castText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        castText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams ctl = new LinearLayout.LayoutParams(-2, -2);
+        ctl.topMargin = dp(14);
+        card.addView(castText, ctl);
+        card.setVisibility(View.GONE);
+        root.addView(card, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        castCard = card;
+
         FrameLayout layer = new FrameLayout(this);
-        layer.setBackgroundColor(0x59000000);
-        // Back, top left; the channel's name sits beside it.
-        TextView back = touchButton("←", d);
+        layer.setBackgroundColor(0x33000000);
+        // Soft shades behind the top and bottom bars.
+        View top = new View(this);
+        top.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[] {0xB3000000, 0x00000000}));
+        layer.addView(top, new FrameLayout.LayoutParams(-1, dp(110), Gravity.TOP));
+        View bottom = new View(this);
+        bottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, new int[] {0xB3000000, 0x00000000}));
+        layer.addView(bottom, new FrameLayout.LayoutParams(-1, dp(110), Gravity.BOTTOM));
+
+        // Top: back, the channel's name with "AO VIVO", and cast on the right.
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(8), dp(8), dp(12), 0);
+        ImageView back = iconButton(Icon.BACK, 13);
         back.setOnClickListener(v -> finish());
-        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(Math.round(52 * d), Math.round(52 * d), Gravity.TOP | Gravity.START);
-        bl.leftMargin = bl.topMargin = Math.round(16 * d);
-        layer.addView(back, bl);
-        // Previous / next, at the bottom centre.
-        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
-        row.setGravity(Gravity.CENTER);
-        TextView prev = touchButton("‹  Anterior", d);
+        bar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        title = new TextView(this);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
+        tl.leftMargin = dp(12);
+        bar.addView(title, tl);
+        TextView live = new TextView(this);
+        live.setText("●  AO VIVO");
+        live.setTextColor(Color.WHITE);
+        live.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        live.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        live.setPadding(dp(8), dp(3), dp(8), dp(3));
+        GradientDrawable lb = new GradientDrawable();
+        lb.setColor(0xFFE53935);
+        lb.setCornerRadius(dp(4));
+        live.setBackground(lb);
+        LinearLayout.LayoutParams lvl = new LinearLayout.LayoutParams(-2, -2);
+        lvl.leftMargin = dp(14);
+        bar.addView(live, lvl);
+        View gap = new View(this);
+        bar.addView(gap, new LinearLayout.LayoutParams(0, 1, 1f));
+        castIcon = iconButton(Icon.CAST, 11);
+        castIcon.setOnClickListener(v -> castPressed());
+        bar.addView(castIcon, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        layer.addView(bar, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+        // Centre: previous channel, pause / play, next channel.
+        LinearLayout mid = new LinearLayout(this);
+        mid.setGravity(Gravity.CENTER);
+        ImageView prev = iconButton(Icon.PREV, 13);
         prev.setOnClickListener(v -> { zap(-1); keepControls(); });
-        TextView next = touchButton("Próximo  ›", d);
+        ImageView play = iconButton(Icon.PAUSE, 22);
+        GradientDrawable pb = new GradientDrawable();
+        pb.setShape(GradientDrawable.OVAL);
+        pb.setColor(0x66000000);
+        play.setBackground(pb);
+        play.setOnClickListener(v -> { togglePause(); keepControls(); });
+        playIcon = play;
+        ImageView next = iconButton(Icon.NEXT, 13);
         next.setOnClickListener(v -> { zap(1); keepControls(); });
-        for (TextView t : new TextView[] {prev, next}) {
-            t.setPadding(Math.round(26 * d), 0, Math.round(26 * d), 0);
-            android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(-2, Math.round(52 * d));
-            lp.leftMargin = lp.rightMargin = Math.round(10 * d);
-            row.addView(t, lp);
-        }
-        FrameLayout.LayoutParams rl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        rl.bottomMargin = Math.round(24 * d);
-        layer.addView(row, rl);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(dp(52), dp(52));
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(76), dp(76));
+        pp.leftMargin = pp.rightMargin = dp(48);
+        mid.addView(prev, sp);
+        mid.addView(play, pp);
+        mid.addView(next, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        layer.addView(mid, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
 
         // Brightness on the left edge, volume on the right: drag up or down on the bar.
-        brightness = sideSlider(layer, Icon.SUN, Gravity.START, d, v -> setBrightness(v));
-        volume = sideSlider(layer, Icon.SPEAKER, Gravity.END, d, v -> {
+        brightness = sideSlider(layer, Icon.SUN, Gravity.START, this::setBrightness);
+        volume = sideSlider(layer, Icon.SPEAKER, Gravity.END, v -> {
             android.media.AudioManager am = audio();
             am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC,
                     Math.round(v * am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)), 0);
         });
 
-        // The child lock, top right: open padlock; tapping it locks the screen.
-        View lock = roundIcon(Icon.LOCK_OPEN, d);
+        // Bottom: the child lock.
+        View lock = labelButton(Icon.LOCK_OPEN, "Bloquear");
         lock.setOnClickListener(v -> setLocked(true));
-        FrameLayout.LayoutParams ll = new FrameLayout.LayoutParams(Math.round(52 * d), Math.round(52 * d), Gravity.TOP | Gravity.END);
-        ll.rightMargin = ll.topMargin = Math.round(16 * d);
+        FrameLayout.LayoutParams ll = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        ll.bottomMargin = dp(10);
         layer.addView(lock, ll);
 
         layer.setVisibility(View.GONE);
@@ -137,51 +224,50 @@ public class PlayerActivity extends Activity {
 
         // While locked, a tap only shows the closed padlock; holding it for a second unlocks.
         FrameLayout lockLayer = new FrameLayout(this);
-        View closed = roundIcon(Icon.LOCK_CLOSED, d);
+        View closed = labelButton(Icon.LOCK_CLOSED, "Segure para desbloquear");
+        GradientDrawable cb = new GradientDrawable();
+        cb.setColor(0x99000000);
+        cb.setCornerRadius(dp(24));
+        closed.setBackground(cb);
         closed.setOnTouchListener((v, e) -> {
             int a = e.getActionMasked();
-            if (a == android.view.MotionEvent.ACTION_DOWN) {
-                v.animate().scaleX(1.15f).scaleY(1.15f).setDuration(1000).start();
+            if (a == MotionEvent.ACTION_DOWN) {
+                v.animate().scaleX(1.1f).scaleY(1.1f).setDuration(1000).start();
                 ui.removeCallbacks(hideLockHint);
                 ui.postDelayed(unlock, 1000);
-            } else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL) {
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
                 v.animate().scaleX(1f).scaleY(1f).setDuration(150).start();
                 ui.removeCallbacks(unlock);
                 ui.postDelayed(hideLockHint, 2500);
             }
             return true;
         });
-        FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(Math.round(52 * d), Math.round(52 * d), Gravity.TOP | Gravity.END);
-        cl.rightMargin = cl.topMargin = Math.round(16 * d);
+        FrameLayout.LayoutParams cl = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        cl.bottomMargin = dp(10);
         lockLayer.addView(closed, cl);
-        TextView hint = new TextView(this);
-        hint.setText("Segure o cadeado para destravar");
-        hint.setTextColor(Color.WHITE);
-        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        hint.setShadowLayer(6 * d, 0, 0, Color.BLACK);
-        FrameLayout.LayoutParams hl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-        hl.rightMargin = Math.round(80 * d);
-        hl.topMargin = Math.round(30 * d);
-        lockLayer.addView(hint, hl);
         lockLayer.setVisibility(View.GONE);
         root.addView(lockLayer, new FrameLayout.LayoutParams(-1, -1));
         lockHint = lockLayer;
-        // The channel's name moves right of the back button.
-        FrameLayout.LayoutParams blp = (FrameLayout.LayoutParams) banner.getLayoutParams();
-        blp.leftMargin = Math.round(80 * d);
-        blp.topMargin = Math.round(18 * d);
-        banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+
+        // Messages ("Carregando…", errors) sit centred under the top bar.
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        blp.topMargin = dp(72);
+        banner.setLayoutParams(blp);
+        banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        banner.setGravity(Gravity.CENTER);
+        banner.setPadding(dp(16), dp(8), dp(16), dp(8));
+        banner.bringToFront();
 
         final android.view.GestureDetector g = new android.view.GestureDetector(this,
                 new android.view.GestureDetector.SimpleOnGestureListener() {
-                    @Override public boolean onDown(android.view.MotionEvent e) { return true; }
-                    @Override public boolean onSingleTapUp(android.view.MotionEvent e) {
+                    @Override public boolean onDown(MotionEvent e) { return true; }
+                    @Override public boolean onSingleTapUp(MotionEvent e) {
                         if (locked) showLockHint();
                         else if (controls.getVisibility() == View.VISIBLE) hideControls.run();
                         else keepControls();
                         return true;
                     }
-                    @Override public boolean onFling(android.view.MotionEvent a, android.view.MotionEvent b, float vx, float vy) {
+                    @Override public boolean onFling(MotionEvent a, MotionEvent b, float vx, float vy) {
                         if (locked || a == null || Math.abs(vy) < 800 || Math.abs(b.getY() - a.getY()) < Math.abs(b.getX() - a.getX())) return false;
                         zap(vy < 0 ? 1 : -1); // swipe up: next channel
                         return true;
@@ -191,14 +277,14 @@ public class PlayerActivity extends Activity {
     }
 
     private void keepControls() {
-        if (locked) return;
+        if (locked || controls == null) return;
         boolean wasShown = controls.getVisibility() == View.VISIBLE && controls.getAlpha() == 1f;
         ui.removeCallbacks(hideControls);
         controls.animate().cancel();
         controls.setAlpha(1f);
         controls.setVisibility(View.VISIBLE);
+        title.setText(current().name);
         if (!wasShown) {
-            show((index + 1) + "/" + Channels.playing.size() + "  " + current().name, 4000);
             brightness.setValue(currentBrightness());
             android.media.AudioManager am = audio();
             int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
@@ -207,16 +293,62 @@ public class PlayerActivity extends Activity {
         ui.postDelayed(hideControls, 4000);
     }
 
-    // ---- Brightness, volume and the child lock ----
+    private ImageView iconButton(int icon, int padDp) {
+        ImageView b = new ImageView(this);
+        b.setImageDrawable(new Icon(icon));
+        b.setPadding(dp(padDp), dp(padDp), dp(padDp), dp(padDp));
+        b.setBackground(ripple());
+        return b;
+    }
 
-    private VSlider brightness, volume;
-    private View lockHint;
-    private boolean locked;
-    private final Runnable hideLockHint = () -> {
-        if (lockHint != null) lockHint.animate().alpha(0f).setDuration(300)
-                .withEndAction(() -> lockHint.setVisibility(View.GONE)).start();
-    };
-    private final Runnable unlock = () -> setLocked(false);
+    // An icon with a word beside it, like "🔓 Bloquear".
+    private View labelButton(int icon, String label) {
+        LinearLayout b = new LinearLayout(this);
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setPadding(dp(16), dp(10), dp(18), dp(10));
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(new Icon(icon));
+        b.addView(iv, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
+        tl.leftMargin = dp(10);
+        b.addView(t, tl);
+        b.setBackground(ripple());
+        return b;
+    }
+
+    private android.graphics.drawable.Drawable ripple() {
+        GradientDrawable mask = new GradientDrawable();
+        mask.setColor(Color.WHITE);
+        mask.setCornerRadius(dp(28));
+        return new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x40FFFFFF), null, mask);
+    }
+
+    // ---- Pause ---------------------------------------------------------------------------------
+
+    private void togglePause() {
+        paused = !paused;
+        playIcon.setImageDrawable(new Icon(paused ? Icon.PLAY : Icon.PAUSE));
+        if (cast != null) {
+            final CastClient c = cast;
+            castWork.execute(() -> c.pause(paused));
+            return;
+        }
+        if (paused) {
+            pausedAt = System.currentTimeMillis();
+            video.pause();
+        } else if (System.currentTimeMillis() - pausedAt > 60000) {
+            start(); // live TV: after a long pause, pick it up live again instead of an old buffer
+        } else {
+            video.start();
+        }
+    }
+
+    // ---- Brightness, volume and the child lock -------------------------------------------------
 
     private void setLocked(boolean on) {
         locked = on;
@@ -241,37 +373,24 @@ public class PlayerActivity extends Activity {
         ui.postDelayed(hideLockHint, 2500);
     }
 
-    // A bar on one edge, with its icon above it, both centred vertically.
-    private VSlider sideSlider(FrameLayout parent, int icon, int side, float d, VSlider.Listener l) {
-        android.widget.LinearLayout col = new android.widget.LinearLayout(this);
-        col.setOrientation(android.widget.LinearLayout.VERTICAL);
+    // A thin bar on one edge, with its icon above it, both centred vertically.
+    private VSlider sideSlider(FrameLayout parent, int icon, int side, VSlider.Listener l) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER_HORIZONTAL);
-        android.widget.ImageView iv = new android.widget.ImageView(this);
+        ImageView iv = new ImageView(this);
         iv.setImageDrawable(new Icon(icon));
-        col.addView(iv, new android.widget.LinearLayout.LayoutParams(Math.round(26 * d), Math.round(26 * d)));
+        col.addView(iv, new LinearLayout.LayoutParams(dp(26), dp(26)));
         VSlider s = new VSlider(this);
         s.setListener(l);
         s.onTouched(() -> { ui.removeCallbacks(hideControls); ui.postDelayed(hideControls, 4000); });
-        android.widget.LinearLayout.LayoutParams sl = new android.widget.LinearLayout.LayoutParams(Math.round(48 * d), Math.round(160 * d));
-        sl.topMargin = Math.round(12 * d);
+        LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(dp(44), dp(150));
+        sl.topMargin = dp(14);
         col.addView(s, sl);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL | side);
-        lp.leftMargin = lp.rightMargin = Math.round(28 * d);
+        lp.leftMargin = lp.rightMargin = dp(24);
         parent.addView(col, lp);
         return s;
-    }
-
-    private View roundIcon(int icon, float d) {
-        android.widget.ImageView b = new android.widget.ImageView(this);
-        b.setImageDrawable(new Icon(icon));
-        int p = Math.round(14 * d);
-        b.setPadding(p, p, p, p);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(0x99000000);
-        bg.setStroke(Math.round(d), 0x40FFFFFF);
-        b.setBackground(bg);
-        return b;
     }
 
     private android.media.AudioManager audio() {
@@ -302,19 +421,137 @@ public class PlayerActivity extends Activity {
         super.onBackPressed();
     }
 
-    private TextView touchButton(String label, float d) {
-        TextView t = new TextView(this);
-        t.setText(label);
-        t.setTextColor(Color.WHITE);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        t.setGravity(Gravity.CENTER);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x99000000);
-        bg.setStroke(Math.round(d), 0x40FFFFFF);
-        bg.setCornerRadius(26 * d);
-        t.setBackground(bg);
-        return t;
+    // ---- Cast to a TV (Google Cast) ------------------------------------------------------------
+
+    private CastClient cast;
+    private String castName;
+    private final ExecutorService castWork = Executors.newSingleThreadExecutor();
+
+    private void castPressed() {
+        ui.removeCallbacks(hideControls);
+        if (cast != null) {
+            dialog().setTitle("Transmitindo para " + castName)
+                    .setPositiveButton("Parar transmissão", (x, w) -> stopCast())
+                    .setNegativeButton("Continuar", null)
+                    .setOnDismissListener(x -> keepControls())
+                    .show();
+            return;
+        }
+        final List<CastFinder.Tv> found = new ArrayList<>();
+        final ArrayAdapter<String> rows = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
+        rows.add("Procurando TVs na rede…");
+        final CastFinder finder = new CastFinder(this);
+        final AlertDialog dlg = dialog().setTitle("Transmitir para uma TV")
+                .setAdapter(rows, null)
+                .setNeutralButton("Espelhar tela", (x, w) -> mirror())
+                .setNegativeButton("Cancelar", null)
+                .create();
+        dlg.getListView().setOnItemClickListener((parent, view, pos, id) -> {
+            if (pos >= found.size()) return;
+            dlg.dismiss();
+            startCast(found.get(pos));
+        });
+        final Runnable none = () -> {
+            if (found.isEmpty() && dlg.isShowing()) {
+                rows.clear();
+                rows.add("Nenhuma TV com Google Cast encontrada.\nTente \"Espelhar tela\".");
+            }
+        };
+        finder.start(tvs -> {
+            found.clear();
+            found.addAll(tvs);
+            rows.clear();
+            for (CastFinder.Tv t : tvs) rows.add(t.name);
+        });
+        dlg.setOnDismissListener(x -> {
+            finder.stop();
+            ui.removeCallbacks(none);
+            keepControls();
+        });
+        dlg.show();
+        ui.postDelayed(none, 8000);
     }
+
+    private AlertDialog.Builder dialog() {
+        return new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
+    }
+
+    // Phones' own screen mirroring (Smart View, Screen Cast...), for TVs without Google Cast.
+    private void mirror() {
+        for (String a : new String[] {"android.settings.CAST_SETTINGS", android.provider.Settings.ACTION_WIRELESS_SETTINGS}) {
+            try { startActivity(new Intent(a)); return; } catch (Exception ignored) {}
+        }
+    }
+
+    private void startCast(final CastFinder.Tv target) {
+        show("Conectando à " + target.name + "…", 0);
+        castWork.execute(() -> {
+            CastClient c = new CastClient();
+            try {
+                c.connect(target.host, target.port);
+            } catch (Exception e) {
+                c.close();
+                ui.post(() -> show("Não deu para conectar à " + target.name, 4000));
+                return;
+            }
+            ui.post(() -> {
+                if (isFinishing()) { c.close(); return; }
+                cast = c;
+                castName = target.name;
+                ui.removeCallbacks(stalled);
+                video.stopPlayback();
+                castIcon.setImageDrawable(new Icon(Icon.CAST_ON));
+                castCard.setVisibility(View.VISIBLE);
+                start();
+            });
+        });
+    }
+
+    private void castLoad(final Channels.Channel ch) {
+        final CastClient c = cast;
+        final int at = index;
+        castText.setText("Transmitindo para " + castName);
+        show("Abrindo " + ch.name + " na " + castName + "…", 0);
+        castWork.execute(() -> {
+            String r;
+            try { r = c.play(ch.url, ch.name); }
+            catch (Exception e) { r = "a conexão com a TV caiu"; }
+            final String why = r;
+            ui.post(() -> {
+                if (cast != c || at != index) return; // the channel was changed meanwhile
+                if (why == null) {
+                    show("▶  " + ch.name + " na " + castName, 3000);
+                } else if (!c.isOpen()) {
+                    show("A transmissão para " + castName + " terminou", 4000);
+                    endCast();
+                } else {
+                    show(ch.name + ": " + why + "\nTroque de canal ou pare a transmissão", 0);
+                }
+            });
+        });
+    }
+
+    private void stopCast() {
+        final CastClient c = cast;
+        if (c == null) return;
+        castWork.execute(() -> { c.stop(); c.close(); });
+        endCast();
+    }
+
+    private void endCast() {
+        if (cast != null) {
+            final CastClient c = cast;
+            castWork.execute(c::close);
+        }
+        cast = null;
+        castIcon.setImageDrawable(new Icon(Icon.CAST));
+        castCard.setVisibility(View.GONE);
+        paused = false;
+        playIcon.setImageDrawable(new Icon(Icon.PAUSE));
+        start(); // back to playing on the phone
+    }
+
+    // ---- System bars ---------------------------------------------------------------------------
 
     // Phone: hide the status and navigation bars; a swipe from the edge brings them back for a moment.
     @SuppressWarnings("deprecation")
@@ -331,9 +568,14 @@ public class PlayerActivity extends Activity {
         if (has && !tv) immersive();
     }
 
+    // ---- Playing -------------------------------------------------------------------------------
+
     private void start() {
         Channels.Channel ch = current();
         Channels.saveLast(this, ch, getIntent().getIntExtra("category", 1));
+        if (title != null) title.setText(ch.name);
+        if (cast != null) { castLoad(ch); return; }
+        if (playIcon != null && paused) { paused = false; playIcon.setImageDrawable(new Icon(Icon.PAUSE)); }
         show((index + 1) + "/" + Channels.playing.size() + "  " + ch.name + "\nCarregando…", 0);
         ui.removeCallbacks(stalled);
         ui.postDelayed(stalled, 20000);
@@ -344,6 +586,7 @@ public class PlayerActivity extends Activity {
 
     private void fail(String why) {
         ui.removeCallbacks(stalled);
+        if (cast != null) return; // the phone isn't playing it: the TV is
         show(current().name + " indisponível (" + why + ")\n"
                 + (tv ? "↑ ↓ para trocar de canal" : "Deslize ou toque para trocar de canal"), 0);
     }
@@ -411,6 +654,10 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        // Leaving while casting: the TV keeps playing the channel; only the connection is closed.
+        final CastClient c = cast;
+        if (c != null) castWork.execute(c::close);
+        castWork.shutdown();
         ui.removeCallbacksAndMessages(null);
         video.stopPlayback();
         finish(); // never keep a stream running in the background on 1 GB of RAM

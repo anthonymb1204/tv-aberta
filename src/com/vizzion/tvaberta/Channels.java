@@ -215,6 +215,7 @@ final class Channels {
     private static final String YT_IMG = "https://yt3.googleusercontent.com/";
     private static final String[][] YOUTUBE = {
             {"CazéTV", "CazeTV", "Esportes", "Zm3t3pgNIYY1HgkWYaWmU3E--oljMiWqX_2Ig4zkxziTkP3VOR9TGUmgJAPu7XrhP06ebxDg"},
+            {"GETV", "getv", "Esportes", "dc3tNE8gU99pZ_5gPcl_7U-hKf_Zzguxa4wTSexNKVNAWxli7hblw2BsrdHWASnjXRWciqecfTk"},
             {"Canal GOAT", "canalgoatbr", "Esportes", "NtXade9YlBhuNpJu5Tcj-PRXH57GtNbON4e6KgaGhZnuqKPDvrhUGcQl88j7F72BKLAaZ72QEow"},
             {"Xsports", "xsports.brasil", "Esportes", "CTQyaT5nUAWjH0Vb-WIOrecZ3f4mAlS1N4niAFtIAX-g8gpTxITlkOY-dnRyh3th_1HxJ7KE"},
             {"N Sports", "nsports", "Esportes", "tt9WaJh3uawWJUv4upgjMNJgirABgKgaionIiPMTor-5rL5EnszV6sL8KDLOwXmqUZmKfnlu"},

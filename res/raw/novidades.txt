@@ -2,6 +2,9 @@
 # o que vem na versão nova. Formato: o número da versão numa linha, as novidades embaixo (curtas),
 # uma linha em branco entre as versões. A mais nova primeiro.
 
+1.7.4
+GETV (o canal de esportes da Globo no YouTube), em Esportes
+
 1.7.3
 Notificação no celular (e na TV) quando sai versão nova
 
